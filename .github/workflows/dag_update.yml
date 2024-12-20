@@ -1,0 +1,45 @@
+name: Sync DAGs to EC2
+
+on:
+  push:
+    paths:
+      - 'dags/**'  # Trigger only when files in dags folder change
+
+jobs:
+  sync-dags:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      
+      - name: Create shell script for syncing
+        run: |
+          cat << 'EOF' > sync_dags.sh
+          #!/bin/bash
+          rm -rf /var/lib/airflow/dags/*
+          aws s3 cp s3://${{ secrets.S3_BUCKET }}/dags.zip /tmp/dags.zip
+          unzip -o /tmp/dags.zip -d /var/lib/airflow/dags/
+          chown -R airflow:airflow /var/lib/airflow/dags/
+          rm /tmp/dags.zip
+          EOF
+      
+      - name: Zip DAGs folder
+        run: zip -r dags.zip dags/
+      
+      - name: Upload to S3
+        run: aws s3 cp dags.zip s3://${{ secrets.S3_BUCKET }}/dags.zip
+      
+      - name: Execute sync script on EC2 via SSM
+        run: |
+          aws ssm send-command \
+            --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=['bash -c \"$(cat sync_dags.sh)\"']" \
+            --comment "Sync Airflow DAGs"
