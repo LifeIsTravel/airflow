@@ -78,7 +78,9 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
     logging.info(f"{origin} -> {target}의 {date} 비행기 데이터를 가져오는 중...")
 
     # 날짜와 시간을 원하는 형식으로 추출
-    date_str = execution_datetime.strftime("%Y%m%d")  # 20241220 형태
+    year_str = f"{execution_datetime.year}"  # '2024' 형태
+    month_str = f"{execution_datetime.month:02d}"  # '12' 형태
+    day_str = f"{execution_datetime.day:02d}"  # '20' 형태
     time_str = execution_datetime.strftime("%H:%M")  # 14:00 형태
 
     # 출발지와 목적지가 같으면 처리하지 않음
@@ -121,7 +123,7 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
 
         # S3에 바로 업로드
         s3_bucket = "team5-s3"  # S3 버킷 이름
-        s3_key = f"{date_str}/{time_str}/{origin}_to_{target}_{date}.parquet"  # S3 객체 키
+        s3_key = f"flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}.parquet"  # S3 객체 키
         upload_to_s3(df, s3_bucket, s3_key)
 
     else:
@@ -130,7 +132,7 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
 
         # S3에 바로 빈 파일 업로드
         s3_bucket = "team5-s3"  # S3 버킷 이름
-        s3_key = f"{date_str}/{time_str}/{origin}_to_{target}_empty_{date}.parquet"  # S3 객체 키
+        s3_key = f"flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}_empty.parquet"
         upload_to_s3(empty_df, s3_bucket, s3_key)
         logging.warning(f"{origin} -> {target}의 {date} 비행기 데이터가 없으므로 빈 파일이 S3에 업로드되었습니다.")
 
