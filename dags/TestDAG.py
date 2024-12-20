@@ -1,37 +1,20 @@
 from airflow import DAG
-from airflow.operators.bash import BashOperator
-from datetime import datetime, timedelta
+from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow.operators.python import PythonOperator
+from datetime import datetime
 
+def upload_to_s3():
+    hook = S3Hook(aws_conn_id='aws_default')  # Airflow의 AWS Connection ID 사용
+    data = "This is a test data"
+    hook.load_string(string_data=data, key='test/data.txt', bucket_name='team5-s3')
 
-default_args = {
-   'owner': 'keeyong',
-   'start_date': datetime(2023, 5, 27, hour=0, minute=00),
-   'email': ['keeyonghan@hotmail.com'],
-   'retries': 1,
-   'retry_delay': timedelta(minutes=3),
-}
-
-test_dag = DAG(
-   "dag_v1", # DAG name
-   schedule="0 9 * * *", 
-   tags=['test'],
-   catchup=False,
-   default_args=default_args 
-)
-
-t1 = BashOperator(
-   task_id='print_date',
-   bash_command='date',
-   dag=test_dag)
-
-t2 = BashOperator(
-   task_id='sleep',
-   bash_command='sleep 5',
-   dag=test_dag)
-
-t3 = BashOperator(
-   task_id='ls',
-   bash_command='ls /tmp',
-   dag=test_dag)
-
-t1 >> [ t2, t3 ]
+with DAG(
+    dag_id='s3_upload_example',
+    start_date=datetime(2023, 1, 1),
+    schedule_interval=None,
+    catchup=False,
+) as dag:
+    upload_task = PythonOperator(
+        task_id='upload_to_s3',
+        python_callable=upload_to_s3,
+    )
