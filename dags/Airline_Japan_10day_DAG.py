@@ -3,7 +3,7 @@ import io
 import json
 import logging
 from datetime import datetime, timedelta
-
+from airflow.models import Variable
 import pandas as pd
 import pytz
 from airflow import DAG
@@ -15,9 +15,9 @@ from apify_client import ApifyClient
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
-
+api_key = Variable.get("flight_api2_secret")
 # ApifyClient 초기화
-client = ApifyClient("YOUR_API_KEY")
+client = ApifyClient(api_key)
 
 # 목적지 공항 코드 정의
 airports = {
