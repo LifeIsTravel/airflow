@@ -81,7 +81,7 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
     year_str = f"{execution_datetime.year}"  # '2024' 형태
     month_str = f"{execution_datetime.month:02d}"  # '12' 형태
     day_str = f"{execution_datetime.day:02d}"  # '20' 형태
-    time_str = execution_datetime.strftime("%H:%M")  # 14:00 형태
+    time_str = execution_datetime.strftime("%H-%M")  # 14-00 형태
 
     # 출발지와 목적지가 같으면 처리하지 않음
     if origin == target:
@@ -121,6 +121,10 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
             if isinstance(df[col].iloc[0], (dict, list)):
                 df[col] = df[col].apply(json.dumps)
 
+        # 추출한 날짜와 시간을 하나의 컬럼으로 추가
+        extracted_at_str = f"{year_str}{month_str}{day_str}{execution_datetime.strftime('%H%M')}"
+        df['extracted_at'] = extracted_at_str
+
         # S3에 바로 업로드
         s3_bucket = "team5-s3"  # S3 버킷 이름
         s3_key = f"flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}.parquet"  # S3 객체 키
@@ -142,7 +146,7 @@ async def main(execution_date):
     logging.info(f"비행기 데이터 처리 시작... (실행 시간: {execution_date})")
 
     # execution_date를 한국 시간(KST)으로 변환
-    start_date = datetime.strptime(execution_date, '%Y-%m-%dT%H:%M:%S.%f%z')  # execution_date는 이미 UTC 시간입니다.
+    start_date = datetime.strptime(execution_date, '%Y-%m-%dT%H:%M:%S.%f%z')  # '%Y-%m-%dT%H:%M:%S%z' 스케쥴러로 돌릴때는 .%f가 필요없음
     kst = pytz.timezone('Asia/Seoul')
     start_date_kst = start_date.astimezone(kst)
 
