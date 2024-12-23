@@ -7,8 +7,8 @@ import pytz
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models import Variable
-from airflow.providers.amazon.aws.hooks.glue import GlueJobHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 from apify_client import ApifyClient
 
 # 로깅설정
@@ -23,15 +23,15 @@ client = ApifyClient(api_key)
 airports = {
     "FUK": "후쿠오카",
     # "HKG": "홍콩",
-    "KIX": "오사카/간사이",
+    # "KIX": "오사카/간사이",
     # "PVG": "상하이/푸동",
-    "NRT": "도쿄/나리타",
+    # "NRT": "도쿄/나리타",
     # "BKK": "방콕/수완나품",
     # "SEA": "시애틀",
     # "NGO": "나고야",
     # "TAO": "칭다오",
     # "SIN": "싱가포르",
-    "CTS": "삿포로",
+    # "CTS": "삿포로",
 }
 
 
@@ -144,7 +144,7 @@ async def main(execution_time):
     execution_datetime = trans_to_kst(execution_time)
 
     # 날짜 계산
-    dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(10)]
+    dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1)]
 
     # 각 날짜에 대해 작업을 수행
     tasks = []
@@ -174,9 +174,6 @@ def extract(execution_time):
 def transform(execution_time, extract_data):
     logging.info(f"{extract_data} Transform 태스크 시작... (실행 시간: {execution_time})")
 
-    # GlueJobHook을 사용하여 Glue 작업 실행
-    glue_hook = GlueJobHook(job_name='team5-glue-test')
-
     execution_datetime = trans_to_kst(execution_time)
 
     # 날짜와 시간을 원하는 형식으로 추출
@@ -196,8 +193,18 @@ def transform(execution_time, extract_data):
 
     # AWS Glue 작업 실행
     try:
-        response = glue_hook.run_job(arguments=arguments)
-        logging.info(f"AWS Glue Job 실행 시작. Job Run ID: {response['JobRunId']}")
+        glue_job = GlueJobOperator(
+            task_id='run_glue_job',
+            job_name='team5-glue-test',  # Glue 작업 이름
+            # script_location='s3://your-bucket/your-script.py',  # Glue 스크립트 경로
+            aws_conn_id='aws_default',  # AWS 연결 ID (Airflow 연결 설정에 맞게 수정)
+            job_language='python',  # Glue 작업 언어 (예시: python)
+            arguments=arguments  # 인수 전달
+        )
+
+        # Glue 작업 실행
+        glue_job.execute(context={})
+        logging.info(f"AWS Glue Job 실행 시작.")
     except Exception as e:
         logging.error(f"AWS Glue 작업 실행 중 오류 발생: {e}")
 
