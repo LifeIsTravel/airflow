@@ -194,7 +194,7 @@ def transform(execution_time, extract_data):
 
     # AWS Glue? lambda 작업 실행
     try:
-        payload = f'{"folder_path": "{folder_path}"}'
+        payload = f'{"folder_path": {folder_path}}'
 
         # Lambda 호출
         invoke_lambda = LambdaInvokeFunctionOperator(
