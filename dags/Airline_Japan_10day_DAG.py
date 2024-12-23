@@ -4,11 +4,11 @@ import json
 import logging
 from datetime import datetime, timedelta
 
-import boto3
 import pytz
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models import Variable
+from airflow.providers.amazon.aws.hooks.glue import GlueJobHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from apify_client import ApifyClient
 
@@ -170,14 +170,15 @@ async def main(execution_time):
 @task
 def extract(execution_time):
     asyncio.run(main(execution_time))  # execution_time main 함수로 전달
+    return "extract 완료!"
 
 
 @task
-def transform(execution_time):
-    logging.info(f"Transform 태스크 시작... (실행 시간: {execution_time})")
+def transform(execution_time, extract_data):
+    logging.info(f"{extract_data} Transform 태스크 시작... (실행 시간: {execution_time})")
 
-    # AWS Glue 클라이언트 초기화
-    glue_client = boto3.client('glue', region_name='ap-northeast-2')  # 리전 설정
+    # GlueJobHook을 사용하여 Glue 작업 실행
+    glue_hook = GlueJobHook(job_name='team5-glue-test')
 
     execution_datetime = trans_to_kst(execution_time)
 
@@ -191,14 +192,14 @@ def transform(execution_time):
     folder_path = f"raw_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/"
     logging.info(f"폴더 경로: {folder_path}")
 
+    # Glue 작업에 전달할 인수 설정
+    arguments = {
+        '--folder_path': folder_path  # Glue 작업에 folder_path 인수 전달
+    }
+
     # AWS Glue 작업 실행
     try:
-        response = glue_client.start_job_run(
-            JobName='team5-glue-test',  # Glue Job 이름
-            Arguments={
-                '--folder_path': folder_path,  # Glue 작업에 folder_path 인수 전달
-            }
-        )
+        response = glue_hook.run_job(arguments=arguments)
         logging.info(f"AWS Glue Job 실행 시작. Job Run ID: {response['JobRunId']}")
     except Exception as e:
         logging.error(f"AWS Glue 작업 실행 중 오류 발생: {e}")
@@ -212,5 +213,5 @@ with DAG(
         catchup=False,
 ) as dag:
     execution_time = '{{ ts }}'  # Airflow에서 제공하는 execution_time 템플릿 변수로 사용
-    extract(execution_time)  # extract 태스크 실행
-    transform(execution_time)  # transform 태스크 실행
+    extract_data = extract(execution_time)  # extract 태스크 실행
+    transform(execution_time, extract_data)  # transform 태스크 실행
