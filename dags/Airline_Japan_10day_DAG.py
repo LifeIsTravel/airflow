@@ -202,6 +202,7 @@ def transform(execution_time, extract_data):
             invocation_type='Event',  # 비동기 호출
             payload=payload,  # Lambda에 전달할 JSON 형식의 페이로드
             aws_conn_id='aws_default',  # 사용하려는 AWS 연결 ID
+            region_name='ap-northeast-2',  # 리전 명시
         )
         invoke_lambda.execute(context={})
         logging.info(f"AWS lambda 실행 시작.")
