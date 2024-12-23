@@ -8,7 +8,6 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.models import Variable
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 from airflow.providers.amazon.aws.operators.lambda_function import LambdaInvokeFunctionOperator
 from apify_client import ApifyClient
 
@@ -194,7 +193,7 @@ def transform(execution_time, extract_data):
 
     # AWS Glue? lambda 작업 실행
     try:
-        payload = f'{"folder_path": {folder_path}}'
+        payload = f'{{"folder_path": "{folder_path}"}}'
 
         # Lambda 호출
         invoke_lambda = LambdaInvokeFunctionOperator(
@@ -220,7 +219,8 @@ def transform(execution_time, extract_data):
         # glue_job.execute(context={})
         # logging.info(f"AWS Glue Job 실행 시작.")
     except Exception as e:
-        logging.error(f"AWS Glue 작업 실행 중 오류 발생: {e}")
+        # logging.error(f"AWS Glue 작업 실행 중 오류 발생: {e}")
+        logging.error(f"AWS Lambda 작업 실행 중 오류 발생: {e}")
 
 
 with DAG(
