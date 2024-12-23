@@ -3,10 +3,11 @@ import io
 import json
 import logging
 from datetime import datetime, timedelta
-from airflow.models import Variable
+
 import pandas as pd
 import pytz
 from airflow import DAG
+from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from apify_client import ApifyClient
@@ -145,8 +146,16 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
 async def main(execution_date):
     logging.info(f"비행기 데이터 처리 시작... (실행 시간: {execution_date})")
 
-    # execution_date를 한국 시간(KST)으로 변환
-    start_date = datetime.strptime(execution_date, '%Y-%m-%dT%H:%M:%S.%f%z')  # '%Y-%m-%dT%H:%M:%S%z' 스케쥴러로 돌릴때는 .%f가 필요없음
+    # Airflow 실행인지 직접 실행인지 확인
+    if execution_date.minute == 0:
+        # Airflow가 돌린 경우
+        start_date = datetime.strptime(execution_date, '%Y-%m-%dT%H:%M:%S%z')
+        logging.info(f"Airflow 실행으로 판단. 변환된 시작 시간: {start_date}")
+    else:
+        # 직접 돌린 경우
+        start_date = datetime.strptime(execution_date, '%Y-%m-%dT%H:%M:%S.%f%z')
+        logging.info(f"직접 실행으로 판단. 변환된 시작 시간: {start_date}")
+
     kst = pytz.timezone('Asia/Seoul')
     start_date_kst = start_date.astimezone(kst)
 
