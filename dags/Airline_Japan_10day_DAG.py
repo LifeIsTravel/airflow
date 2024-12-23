@@ -4,11 +4,11 @@ import json
 import logging
 from datetime import datetime, timedelta
 
-import pandas as pd
+import boto3
 import pytz
 from airflow import DAG
+from airflow.decorators import task
 from airflow.models import Variable
-from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from apify_client import ApifyClient
 
@@ -36,27 +36,27 @@ airports = {
 }
 
 
-# S3에 바로 업로드하는 함수
-def upload_to_s3(df, s3_bucket, s3_key):
+# S3에 JSON 데이터를 직접 업로드하는 함수
+def upload_json_to_s3(json_data, s3_bucket, s3_key):
     # S3Hook을 사용하여 S3와 연결
     s3_hook = S3Hook(aws_conn_id='aws_default')  # aws_default 연결 아이디
 
     try:
-        # S3에 직접 업로드하기 위해 DataFrame을 in-memory Parquet 파일로 변환
-        parquet_buffer = io.BytesIO()
-        df.to_parquet(parquet_buffer, engine="pyarrow", index=False)
-        parquet_buffer.seek(0)  # 버퍼의 처음으로 이동
+        # JSON 데이터를 문자열로 변환하여 메모리 버퍼에 저장
+        json_buffer = io.StringIO()
+        json.dump(json_data, json_buffer, ensure_ascii=False, indent=4)
+        json_buffer.seek(0)  # 버퍼의 처음으로 이동
 
         # S3에 업로드
         s3_hook.load_file_obj(
-            file_obj=parquet_buffer,
+            file_obj=json_buffer,
             bucket_name=s3_bucket,
             key=s3_key,
             replace=True  # 이미 존재하는 파일을 덮어쓸지 여부
         )
-        logging.info(f"파일이 S3 버킷 {s3_bucket}에 {s3_key}로 업로드되었습니다.")
+        logging.info(f"JSON 파일이 S3 버킷 {s3_bucket}에 {s3_key}로 업로드되었습니다.")
     except Exception as e:
-        logging.error(f"S3에 파일 업로드 실패: {e}")
+        logging.error(f"S3에 JSON 파일 업로드 실패: {e}")
 
 
 # Apify에서 비행기 데이터를 동기적으로 가져오는 함수
@@ -111,41 +111,23 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
         fetch_flight_data_sync, run_input, date, origin, target
     )
 
-    # 결과가 있으면 Parquet 파일로 저장
+    # 결과가 있으면 JSON으로 저장
     if results:
-        logging.info(f"{origin} -> {target}의 {date} 데이터가 있으면 파일로 저장 중...")
-        # 결과를 DataFrame으로 변환
-        df = pd.DataFrame(results)
-
-        # 복잡한 유형(예: dict, list)의 컬럼을 JSON 문자열로 변환
-        for col in df.columns:
-            if isinstance(df[col].iloc[0], (dict, list)):
-                df[col] = df[col].apply(json.dumps)
-
-        # 추출한 날짜와 시간을 하나의 컬럼으로 추가
-        extracted_at_str = f"{year_str}{month_str}{day_str}{execution_datetime.strftime('%H%M')}"
-        df['extracted_at'] = extracted_at_str
-
-        # S3에 바로 업로드
+        logging.info(f"{origin} -> {target}의 {date} 데이터가 있으면 JSON 파일로 저장 중...")
+        # S3에 JSON 데이터 업로드
         s3_bucket = "team5-s3"  # S3 버킷 이름
-        s3_key = f"raw_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}.parquet"  # S3 객체 키
-        upload_to_s3(df, s3_bucket, s3_key)
+        s3_key = f"raw_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}.json"  # S3 객체 키
+        upload_json_to_s3(results, s3_bucket, s3_key)
 
     else:
-        # 빈 DataFrame 생성
-        empty_df = pd.DataFrame()
-
-        # S3에 바로 빈 파일 업로드
+        # 빈 JSON 리스트 업로드
+        logging.warning(f"{origin} -> {target}의 {date} 비행기 데이터가 없으므로 빈 JSON 파일을 S3에 업로드합니다.")
         s3_bucket = "team5-s3"  # S3 버킷 이름
-        s3_key = f"raw_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}_empty.parquet"
-        upload_to_s3(empty_df, s3_bucket, s3_key)
-        logging.warning(f"{origin} -> {target}의 {date} 비행기 데이터가 없으므로 빈 파일이 S3에 업로드되었습니다.")
+        s3_key = f"raw_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}_empty.json"
+        upload_json_to_s3([], s3_bucket, s3_key)
 
 
-# execution_date는 이미 datetime 객체일 경우
-async def main(execution_date):
-    logging.info(f"비행기 데이터 처리 시작... (실행 시간: {execution_date})")
-
+def trans_to_kst(execution_date):
     # Airflow가 돌린 경우 -> '%Y-%m-%dT%H:%M:%S%z' / 직접 돌린 경우 -> '%Y-%m-%dT%H:%M:%S.%f%z'
     if '.' in execution_date:
         start_date = datetime.strptime(execution_date, '%Y-%m-%dT%H:%M:%S.%f%z')
@@ -154,8 +136,15 @@ async def main(execution_date):
         start_date += timedelta(hours=1)
     kst = pytz.timezone('Asia/Seoul')
     start_date_kst = start_date.astimezone(kst)
-
     logging.info(f"한국 시간: {start_date_kst}")
+    return start_date_kst
+
+
+# execution_date는 이미 datetime 객체일 경우
+async def main(execution_date):
+    logging.info(f"비행기 데이터 처리 시작... (실행 시간: {execution_date})")
+
+    start_date_kst = trans_to_kst(execution_date)
 
     # 날짜 계산
     dates = [(start_date_kst + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(10)]
@@ -177,9 +166,42 @@ async def main(execution_date):
     logging.info("모든 비행기 데이터 수집 작업 완료!")
 
 
-# PythonOperator에서 호출할 함수
-def run_async_tasks(execution_date):
+# @task를 사용하여 Airflow 태스크로 등록
+@task
+def extract(execution_date):
     asyncio.run(main(execution_date))  # execution_date를 main 함수로 전달
+
+
+@task
+def transform(execution_date):
+    logging.info(f"Transform 태스크 시작... (실행 시간: {execution_date})")
+
+    # AWS Glue 클라이언트 초기화
+    glue_client = boto3.client('glue', region_name='ap-northeast-2')  # 리전 설정
+
+    execution_datetime = trans_to_kst(execution_date)
+
+    # 날짜와 시간을 원하는 형식으로 추출
+    year_str = f"{execution_datetime.year}"  # '2024' 형태
+    month_str = f"{execution_datetime.month:02d}"  # '12' 형태
+    day_str = f"{execution_datetime.day:02d}"  # '20' 형태
+    time_str = execution_datetime.strftime("%H-%M")  # 14-00 형태
+
+    # 폴더 경로 생성 (형식: raw_data/flights/년/월/일/시-분/)
+    folder_path = f"raw_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/"
+    logging.info(f"폴더 경로: {folder_path}")
+
+    # AWS Glue 작업 실행
+    try:
+        response = glue_client.start_job_run(
+            JobName='team5-glue-test',  # Glue Job 이름
+            Arguments={
+                '--folder_path': folder_path,  # Glue 작업에 folder_path 인수 전달
+            }
+        )
+        logging.info(f"AWS Glue Job 실행 시작. Job Run ID: {response['JobRunId']}")
+    except Exception as e:
+        logging.error(f"AWS Glue 작업 실행 중 오류 발생: {e}")
 
 
 with DAG(
@@ -189,8 +211,6 @@ with DAG(
         schedule_interval="0 * * * *",  # 매시간마다 실행
         catchup=False,
 ) as dag:
-    task = PythonOperator(
-        task_id="collect_flight_data_task",
-        python_callable=run_async_tasks,
-        op_kwargs={'execution_date': '{{ ts }}'},  # Airflow에서 제공하는 execution_date를 전달
-    )
+    execution_date = '{{ ts }}'  # Airflow에서 제공하는 execution_date를 템플릿 변수로 사용
+    extract(execution_date)  # extract 태스크 실행
+    transform(execution_date)  # transform 태스크 실행
