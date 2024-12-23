@@ -127,12 +127,12 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
         upload_json_to_s3([], s3_bucket, s3_key)
 
 
-def trans_to_kst(execution_date):
+def trans_to_kst(execution_time):
     # Airflow가 돌린 경우 -> '%Y-%m-%dT%H:%M:%S%z' / 직접 돌린 경우 -> '%Y-%m-%dT%H:%M:%S.%f%z'
-    if '.' in execution_date:
-        start_date = datetime.strptime(execution_date, '%Y-%m-%dT%H:%M:%S.%f%z')
+    if '.' in execution_time:
+        start_date = datetime.strptime(execution_time, '%Y-%m-%dT%H:%M:%S.%f%z')
     else:
-        start_date = datetime.strptime(execution_date, '%Y-%m-%dT%H:%M:%S%z')
+        start_date = datetime.strptime(execution_time, '%Y-%m-%dT%H:%M:%S%z')
         start_date += timedelta(hours=1)
     kst = pytz.timezone('Asia/Seoul')
     start_date_kst = start_date.astimezone(kst)
@@ -140,14 +140,14 @@ def trans_to_kst(execution_date):
     return start_date_kst
 
 
-# execution_date는 이미 datetime 객체일 경우
-async def main(execution_date):
-    logging.info(f"비행기 데이터 처리 시작... (실행 시간: {execution_date})")
+# execution_time 이미 datetime 객체일 경우
+async def main(execution_time):
+    logging.info(f"비행기 데이터 처리 시작... (실행 시간: {execution_time})")
 
-    start_date_kst = trans_to_kst(execution_date)
+    execution_datetime = trans_to_kst(execution_time)
 
     # 날짜 계산
-    dates = [(start_date_kst + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(10)]
+    dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(10)]
 
     # 각 날짜에 대해 작업을 수행
     tasks = []
@@ -155,11 +155,11 @@ async def main(execution_date):
         logging.info(f"{date}에 대해 데이터 수집 시작...")
         # (ICN -> 목적지)에 대해 처리
         for target, _ in airports.items():
-            tasks.append(fetch_flight_data(date, "ICN", target, start_date_kst))
+            tasks.append(fetch_flight_data(date, "ICN", target, execution_datetime))
 
         # (출발지 -> ICN)에 대해 처리
         for origin, _ in airports.items():
-            tasks.append(fetch_flight_data(date, origin, "ICN", start_date_kst))
+            tasks.append(fetch_flight_data(date, origin, "ICN", execution_datetime))
 
     # 모든 작업을 동시에 실행
     await asyncio.gather(*tasks)
@@ -168,18 +168,18 @@ async def main(execution_date):
 
 # @task를 사용하여 Airflow 태스크로 등록
 @task
-def extract(execution_date):
-    asyncio.run(main(execution_date))  # execution_date를 main 함수로 전달
+def extract(execution_time):
+    asyncio.run(main(execution_time))  # execution_time main 함수로 전달
 
 
 @task
-def transform(execution_date):
-    logging.info(f"Transform 태스크 시작... (실행 시간: {execution_date})")
+def transform(execution_time):
+    logging.info(f"Transform 태스크 시작... (실행 시간: {execution_time})")
 
     # AWS Glue 클라이언트 초기화
     glue_client = boto3.client('glue', region_name='ap-northeast-2')  # 리전 설정
 
-    execution_datetime = trans_to_kst(execution_date)
+    execution_datetime = trans_to_kst(execution_time)
 
     # 날짜와 시간을 원하는 형식으로 추출
     year_str = f"{execution_datetime.year}"  # '2024' 형태
@@ -211,6 +211,6 @@ with DAG(
         schedule_interval="0 * * * *",  # 매시간마다 실행
         catchup=False,
 ) as dag:
-    execution_date = '{{ ts }}'  # Airflow에서 제공하는 execution_date를 템플릿 변수로 사용
-    extract(execution_date)  # extract 태스크 실행
-    transform(execution_date)  # transform 태스크 실행
+    execution_time = '{{ ts }}'  # Airflow에서 제공하는 execution_time 템플릿 변수로 사용
+    extract(execution_time)  # extract 태스크 실행
+    transform(execution_time)  # transform 태스크 실행
