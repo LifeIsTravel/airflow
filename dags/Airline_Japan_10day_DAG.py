@@ -1,5 +1,4 @@
 import asyncio
-import io
 import json
 import logging
 from datetime import datetime, timedelta
@@ -36,20 +35,18 @@ airports = {
 }
 
 
-# S3에 JSON 데이터를 직접 업로드하는 함수
+# S3에 JSON 데이터를 문자열로 업로드하는 함수
 def upload_json_to_s3(json_data, s3_bucket, s3_key):
     # S3Hook을 사용하여 S3와 연결
     s3_hook = S3Hook(aws_conn_id='aws_default')  # aws_default 연결 아이디
 
     try:
-        # JSON 데이터를 문자열로 변환하여 메모리 버퍼에 저장
-        json_buffer = io.BytesIO()  # StringIO 대신 BytesIO 사용
-        json.dump(json_data, json_buffer, ensure_ascii=False, indent=4)
-        json_buffer.seek(0)  # 버퍼의 처음으로 이동
+        # JSON 데이터를 문자열로 변환
+        json_string = json.dumps(json_data, ensure_ascii=False, indent=4)
 
-        # S3에 업로드
-        s3_hook.load_file_obj(
-            file_obj=json_buffer,
+        # S3에 문자열 업로드
+        s3_hook.load_string(
+            string_data=json_string,
             bucket_name=s3_bucket,
             key=s3_key,
             replace=True  # 이미 존재하는 파일을 덮어쓸지 여부
@@ -117,7 +114,7 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
         # S3에 JSON 데이터 업로드
         s3_bucket = "team5-s3"  # S3 버킷 이름
         s3_key = f"raw_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}.json"  # S3 객체 키
-        upload_json_to_s3(results[0], s3_bucket, s3_key)
+        upload_json_to_s3(results, s3_bucket, s3_key)
 
     else:
         # 빈 JSON 리스트 업로드
