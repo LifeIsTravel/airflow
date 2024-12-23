@@ -146,15 +146,10 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
 async def main(execution_date):
     logging.info(f"비행기 데이터 처리 시작... (실행 시간: {execution_date})")
 
-    # Airflow 실행인지 직접 실행인지 확인
-    if execution_date.minute == 0:
-        # Airflow가 돌린 경우
-        start_date = datetime.strptime(execution_date, '%Y-%m-%dT%H:%M:%S%z')
-        logging.info(f"Airflow 실행으로 판단. 변환된 시작 시간: {start_date}")
-    else:
-        # 직접 돌린 경우
-        start_date = datetime.strptime(execution_date, '%Y-%m-%dT%H:%M:%S.%f%z')
-        logging.info(f"직접 실행으로 판단. 변환된 시작 시간: {start_date}")
+    # Airflow가 돌린 경우 -> '%Y-%m-%dT%H:%M:%S%z' / 직접 돌린 경우 -> '%Y-%m-%dT%H:%M:%S.%f%z'
+    start_date = datetime.strptime(execution_date,
+                                   '%Y-%m-%dT%H:%M:%S.%f%z') if '.' in execution_date else datetime.strptime(
+        execution_date, '%Y-%m-%dT%H:%M:%S%z')
 
     kst = pytz.timezone('Asia/Seoul')
     start_date_kst = start_date.astimezone(kst)
