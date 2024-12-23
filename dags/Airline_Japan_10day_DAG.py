@@ -150,7 +150,7 @@ async def main(execution_date):
     start_date = datetime.strptime(execution_date,
                                    '%Y-%m-%dT%H:%M:%S.%f%z') if '.' in execution_date else datetime.strptime(
         execution_date, '%Y-%m-%dT%H:%M:%S%z')
-
+    start_date += timedelta(hours=1)
     kst = pytz.timezone('Asia/Seoul')
     start_date_kst = start_date.astimezone(kst)
 
