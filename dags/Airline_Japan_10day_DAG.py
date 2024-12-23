@@ -128,7 +128,7 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
 
         # S3에 바로 업로드
         s3_bucket = "team5-s3"  # S3 버킷 이름
-        s3_key = f"flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}.parquet"  # S3 객체 키
+        s3_key = f"raw_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}.parquet"  # S3 객체 키
         upload_to_s3(df, s3_bucket, s3_key)
 
     else:
@@ -137,7 +137,7 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
 
         # S3에 바로 빈 파일 업로드
         s3_bucket = "team5-s3"  # S3 버킷 이름
-        s3_key = f"flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}_empty.parquet"
+        s3_key = f"raw_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}_empty.parquet"
         upload_to_s3(empty_df, s3_bucket, s3_key)
         logging.warning(f"{origin} -> {target}의 {date} 비행기 데이터가 없으므로 빈 파일이 S3에 업로드되었습니다.")
 
