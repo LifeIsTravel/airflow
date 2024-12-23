@@ -147,10 +147,11 @@ async def main(execution_date):
     logging.info(f"비행기 데이터 처리 시작... (실행 시간: {execution_date})")
 
     # Airflow가 돌린 경우 -> '%Y-%m-%dT%H:%M:%S%z' / 직접 돌린 경우 -> '%Y-%m-%dT%H:%M:%S.%f%z'
-    start_date = datetime.strptime(execution_date,
-                                   '%Y-%m-%dT%H:%M:%S.%f%z') if '.' in execution_date else datetime.strptime(
-        execution_date, '%Y-%m-%dT%H:%M:%S%z')
-    start_date += timedelta(hours=1)
+    if '.' in execution_date:
+        start_date = datetime.strptime(execution_date, '%Y-%m-%dT%H:%M:%S.%f%z')
+    else:
+        start_date = datetime.strptime(execution_date, '%Y-%m-%dT%H:%M:%S%z')
+        start_date += timedelta(hours=1)
     kst = pytz.timezone('Asia/Seoul')
     start_date_kst = start_date.astimezone(kst)
 
