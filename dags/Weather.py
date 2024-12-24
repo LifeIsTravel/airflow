@@ -175,9 +175,9 @@ with DAG(
 ) as past_dag:
     for a in airport:
         weather_past_data = PythonOperator(
-            task_id=f"weather_past_data_{airport['name']}",
+            task_id=f"weather_past_data_{a['name']}",
             python_callable=fetch_weather_data,
-            op_kwargs={'execution_date': '{{ ts }}', 'airport': airport},
+            op_kwargs={'execution_date': '{{ ts }}', 'airport': a},
         )
 
 # 미래 날씨 데이터 수집 DAG
@@ -190,7 +190,7 @@ with DAG(
 ) as future_dag:
     for a in airport:
         weather_future_data = PythonOperator(
-            task_id=f"weather_future_data_{airport['name']}",
+            task_id=f"weather_future_data_{a['name']}",
             python_callable=fetch_forecast_data,
-            op_kwargs={'execution_date': '{{ ts }}', 'airport': airport},
+            op_kwargs={'execution_date': '{{ ts }}', 'airport': a},
         )
