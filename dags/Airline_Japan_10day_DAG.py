@@ -199,7 +199,7 @@ def transform(execution_time, extract_data):
         invoke_lambda = LambdaInvokeFunctionOperator(
             task_id='invoke_lambda_task',
             function_name='Team5-test2',  # Lambda 함수 이름
-            invocation_type='Event',  # 비동기 호출
+            invocation_type='RequestResponse',  # 동기 호출
             payload=payload,  # Lambda에 전달할 JSON 형식의 페이로드
             aws_conn_id='aws_default',  # 사용하려는 AWS 연결 ID
             region_name='ap-northeast-2',  # 리전 명시
@@ -223,6 +223,13 @@ def transform(execution_time, extract_data):
         # logging.error(f"AWS Glue 작업 실행 중 오류 발생: {e}")
         logging.error(f"AWS Lambda 작업 실행 중 오류 발생: {e}")
 
+    return "transform 완료!"
+
+
+@task
+def load(execution_time, transform_data):
+    logging.info(f"{transform_data} Load 태스크 시작... (실행 시간: {execution_time})")
+
 
 with DAG(
         dag_id="async_flight_data_collection",
@@ -233,4 +240,5 @@ with DAG(
 ) as dag:
     execution_time = '{{ ts }}'  # Airflow에서 제공하는 execution_time 템플릿 변수로 사용
     extract_data = extract(execution_time)  # extract 태스크 실행
-    transform(execution_time, extract_data)  # transform 태스크 실행
+    transform_data = transform(execution_time, extract_data)  # transform 태스크 실행
+    load(execution_time, transform_data)
