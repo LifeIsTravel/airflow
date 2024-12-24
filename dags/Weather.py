@@ -50,7 +50,7 @@ airport = [
 
 # 과거 데이터
 def fetch_weather_data(execution_date, airport):
-    execution_datetime = datetime.strptime(execution_date, "%Y-%m-%dT%H:%M:%S.%fZ")
+    execution_datetime = datetime.fromisoformat(execution_date)
     year_str = f"{execution_datetime.year}"  # '2024' 형태
     month_str = f"{execution_datetime.month:02d}"  # '12' 형태
     day_str = f"{execution_datetime.day:02d}"  # '20' 형태
@@ -99,7 +99,7 @@ def fetch_weather_data(execution_date, airport):
 
 # 미래 데이터
 def fetch_forecast_data(execution_date, airport):
-    execution_datetime = datetime.strptime(execution_date, "%Y-%m-%dT%H:%M:%S.%fZ")
+    execution_datetime = datetime.fromisoformat(execution_date)
     year_str = f"{execution_datetime.year}"  # '2024' 형태
     month_str = f"{execution_datetime.month:02d}"  # '12' 형태
     day_str = f"{execution_datetime.day:02d}"  # '20' 형태
