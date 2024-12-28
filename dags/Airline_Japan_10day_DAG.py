@@ -11,7 +11,7 @@ from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.amazon.aws.operators.lambda_function import LambdaInvokeFunctionOperator
 from apify_client import ApifyClient
 
-# 로깅설정
+# 로깅 설정 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
