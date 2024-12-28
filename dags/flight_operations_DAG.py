@@ -143,8 +143,22 @@ def download_daily_data(target_date, data_type, download_path):
         max_attempts = 3
         for attempt in range(max_attempts):
             try:
-                driver.set_page_load_timeout(600)  # 타임아웃 시간 10분으로 증가
-                driver.get("https://www.airportal.go.kr/life/airinfo/FlightScheduleToExcel.jsp")
+                # 다운로드 버튼 찾기 및 클릭
+                download_link = wait.until(
+                    EC.element_to_be_clickable((By.XPATH, "//a[@href='FlightScheduleToExcel.jsp']"))
+                )
+                download_link.click()
+
+                # 새 창이 열릴 때까지 대기
+                time.sleep(5)
+
+                # 새 창으로 전환
+                windows = driver.window_handles
+                new_window = [window for window in windows if window != main_window][0]
+                driver.switch_to.window(new_window)
+
+                #driver.set_page_load_timeout(600)  # 타임아웃 시간 10분으로 증가
+                #driver.get("https://www.airportal.go.kr/life/airinfo/FlightScheduleToExcel.jsp")
                 
                 # 페이지가 실제로 로드되었는지 확인
                 wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.iradio_square-green")))
