@@ -138,7 +138,7 @@ def download_daily_data(target_date, data_type, download_path):
     try:
         # 다운로드 경로 설정 (airflow 사용자의 Downloads 디렉토리)
         # 이미 디렉토리가 있다면 생성하지 않고 없다면 새로 생성
-        download_path = os.path.join(os.apth.expanduser('~'), 'Downloads')
+        download_path = os.path.join(os.path.expanduser('~'), 'Downloads')
         os.makedirs(download_path, exist_ok=True)
         
         driver = setup_chrome_driver()
@@ -290,7 +290,7 @@ def save_to_s3(**context):
     
     s3_hook = S3Hook(aws_conn_id='aws_default')
     bucket_name = 'team5-s3'
-    download_path = os.path.join(os.apth.expanduser('~'), 'Downloads')
+    download_path = os.path.join(os.path.expanduser('~'), 'Downloads')
 
     execution_date = context['execution_date']
     target_date = execution_date.in_timezone(KST) - timedelta(days=1)
@@ -339,7 +339,7 @@ with DAG(
     def download_task_function(**context):
         execution_date = context['execution_date']
         target_date = execution_date.in_timezone(KST) - timedelta(days=1)
-        download_path = os.path.join(os.apth.expanduser('~'), 'Downloads')  # EC2 환경의 경로
+        download_path = os.path.join(os.path.expanduser('~'), 'Downloads')  # EC2 환경의 경로
         
         for data_type in ["출발", "도착"]:
             download_daily_data(target_date, data_type, download_path)
