@@ -36,8 +36,10 @@ def setup_chrome_driver():
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
-        options.add_argument('--window-size=1920,1080')
-        options.add_argument('--disable-extensions')
+        #options.add_argument('--window-size=1920,1080')
+        #options.add_argument('--disable-extensions')
+
+        options.binary_location = '/usr/bin/google-chrome'
         
         # Chrome 버전 출력
         chrome_version = chromedriver_autoinstaller.get_chrome_version()
