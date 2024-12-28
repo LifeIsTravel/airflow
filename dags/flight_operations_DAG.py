@@ -142,7 +142,8 @@ def download_daily_data(target_date, data_type, download_path):
         for attempt in range(max_attempts):
             try:
                 driver.set_page_load_timeout(600)  # 타임아웃 시간 10분으로 증가
-                driver.get("https://www.airportal.go.kr/life/airinfo/FlightScheduleToExcel.jsp#")
+                driver.get("https://www.airportal.go.kr/life/airinfo/FlightScheduleToExcel.jsp")
+                
                 # 페이지가 실제로 로드되었는지 확인
                 wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.iradio_square-green")))
                 time.sleep(5)  # 추가 대기 시간
@@ -255,15 +256,15 @@ with DAG(
     'flight_operations_data_collection',
     default_args=default_args,
     description='매일 전날의 항공운항 데이터 수집',
-    schedule_interval='0 13 * * *',
-    timezone = 'Asia/Seoul',
+    schedule_interval='0 4 * * *', # UCT 4시 = KST 13시
+    #timezone = 'Asia/Seoul',
     tags=['flight_operations'],
     catchup=True,
 ) as dag:
     def download_task_function(**context):
         execution_date = context['execution_date']
         target_date = execution_date.in_timezone(KST) - timedelta(days=1)
-        download_path = '/home/ubuntu/airflow/data'  # EC2 환경의 경로
+        download_path = '/var/lib/airflow/data'  # EC2 환경의 경로
         
         for data_type in ["출발", "도착"]:
             download_daily_data(target_date, data_type, download_path)
