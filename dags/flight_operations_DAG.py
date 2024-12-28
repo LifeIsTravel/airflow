@@ -160,19 +160,19 @@ def download_daily_data(target_date, data_type, download_path):
         
         username_input.send_keys(username)
         password_input.send_keys(password)
-        
+
         
         print("5. 로그인 시도...")
         login_submit = driver.find_element(By.CSS_SELECTOR, "input[type='image'][src='img/btn_login1.jpg']")
         login_submit.click()
-
-        #로그인 검증
-        if not validate_login(driver):
-            raise Exception("로그인 실패")
         
         print("6. 메인 창으로 복귀...")
         driver.switch_to.window(main_window)
         time.sleep(3)
+
+        #로그인 검증
+        if not validate_login(driver):
+            raise Exception("로그인 실패")
         
         print("7. 데이터 다운로드 페이지로 이동 중...")
         max_attempts = 3
