@@ -1,5 +1,5 @@
 from airflow import DAG
-from airflow.models import Varialbe
+from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 import pendulum
@@ -150,8 +150,8 @@ def download_daily_data(target_date, data_type, download_path):
         
         print("4. 로그인 정보 입력 중...")
 
-        username = Varialbe.get("airportal_username")
-        password = Varialbe.get("airportal_password")
+        username = Variable.get("airportal_username")
+        password = Variable.get("airportal_password")
 
         username_input = wait.until(
             EC.presence_of_element_located((By.NAME, "df_userid"))
