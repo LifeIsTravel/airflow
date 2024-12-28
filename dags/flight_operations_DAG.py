@@ -262,7 +262,7 @@ def download_daily_data(target_date, data_type, download_path):
         time.sleep(5)  # 파일 다운로드 완료 대기
         file = os.listdir(download_path)
         # 아직 이름이 변경되지 않은 파일만
-        excel_file = [f for f in file if f.startswith('항공기출도착현황') and data_type not in f]
+        excel_file = [f for f in file if f.startswith('항공기출도착현황')]
         
         if excel_file:
             old_path = os.path.join(download_path, excel_file[0])
@@ -270,8 +270,6 @@ def download_daily_data(target_date, data_type, download_path):
             new_path = os.path.join(download_path, new_filename)
             os.rename(old_path, new_path)
             print(f"파일명 변경: {file} -> {new_filename}")
-                
-        return True
         
     except Exception as e:
         print(f"데이터 다운로드 중 에러: {str(e)}")
