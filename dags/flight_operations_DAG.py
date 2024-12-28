@@ -255,7 +255,8 @@ with DAG(
     'flight_operations_data_collection',
     default_args=default_args,
     description='매일 전날의 항공운항 데이터 수집',
-    schedule_interval='0 11 * * *',
+    schedule_interval='0 13 * * *',
+    timezone = 'Asia/Seoul',
     tags=['flight_operations'],
     catchup=True,
 ) as dag:
