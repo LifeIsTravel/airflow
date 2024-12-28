@@ -1,4 +1,5 @@
 from airflow import DAG
+from airflow.models import Varialbe
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 import pendulum
@@ -131,6 +132,10 @@ def download_daily_data(target_date, data_type, download_path):
         print("1. 메인 페이지 접속 중...")
         driver.get("https://www.airportal.go.kr/life/airinfo/RbHanFrmMain.jsp")
         
+        # 현재 페이지 URL 확인
+        current_url = driver.current_url
+        print(f"현재 페이지 URL: {current_url}")
+
         print("2. 로그인 버튼 클릭...")
         login_button = wait.until(
             EC.element_to_be_clickable((By.XPATH, "//a[text()='로그인']"))
@@ -144,13 +149,18 @@ def download_daily_data(target_date, data_type, download_path):
         driver.switch_to.window(popup_window)
         
         print("4. 로그인 정보 입력 중...")
+
+        username = Varialbe.get("airportal_username")
+        password = Varialbe.get("airportal_password")
+
         username_input = wait.until(
             EC.presence_of_element_located((By.NAME, "df_userid"))
         )
         password_input = driver.find_element(By.NAME, "df_passwd")
         
-        username_input.send_keys("{{ var.value.airportal_username }}")
-        password_input.send_keys("{{ var.value.airportal_password }}")
+        username_input.send_keys(username)
+        password_input.send_keys(password)
+        
         
         print("5. 로그인 시도...")
         login_submit = driver.find_element(By.CSS_SELECTOR, "input[type='image'][src='img/btn_login1.jpg']")
