@@ -59,6 +59,27 @@ def setup_chrome_driver():
         print(f"Chrome Driver 설정 중 에러 발생: {str(e)}")
         raise
 
+def validate_login(driver):
+    """로그인 성공 여부 검증"""
+    try:
+        # 로그인 성공 시 표시되는 환영 메시지 Element 찾기
+        welcome_element = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.XPATH, "/html/body/table/tbody/tr[4]/td[1]/table/tbody/tr[2]/td[2]"))
+        )
+
+        print(f"로그인 성공 여부 확인: {welcome_element.text}")
+
+        # 요소의 텍스트에 "환영합니다"가 포함되어 있는지 확인 (로그인 성공여부)
+        if "환영합니다" in welcome_element.text:
+            return True
+        else:
+            print("로그인 실패")
+            return False
+        
+    except Exception as e:
+        print(f"로그인 검증 중 오류 {str(e)}")
+        return False
+
 def select_radio_button(driver, wait, button_type):
     """출발/도착 라디오 버튼 선택"""
     try:
@@ -134,6 +155,10 @@ def download_daily_data(target_date, data_type, download_path):
         print("5. 로그인 시도...")
         login_submit = driver.find_element(By.CSS_SELECTOR, "input[type='image'][src='img/btn_login1.jpg']")
         login_submit.click()
+
+        #로그인 검증
+        if not validate_login(driver):
+            raise Exception("로그인 실패")
         
         print("6. 메인 창으로 복귀...")
         driver.switch_to.window(main_window)
@@ -145,8 +170,8 @@ def download_daily_data(target_date, data_type, download_path):
             try:
                 # 다운로드 버튼 찾기 및 클릭
                 download_link = wait.until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[@href='FlightScheduleToExcel.jsp']"))
-                )
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "#excel_div > a"))
+                ) 
                 download_link.click()
 
                 # 새 창이 열릴 때까지 대기
@@ -231,8 +256,8 @@ def save_to_s3(**context):
     
     s3_hook = S3Hook(aws_conn_id='aws_default')
     bucket_name = 'team5-s3'
-    download_path = '/home/ubuntu/airflow/data'  # EC2 환경의 경로
-    
+    download_path = '/var/lib/airflow/data'
+
     execution_date = context['execution_date']
     target_date = execution_date.in_timezone(KST) - timedelta(days=1)
     date_str = target_date.strftime('%Y%m%d')
