@@ -59,27 +59,31 @@ def setup_chrome_driver():
     except Exception as e:
         print(f"Chrome Driver 설정 중 에러 발생: {str(e)}")
         raise
-
+        
 def validate_login(driver):
     """로그인 성공 여부 검증"""
     try:
         # 로그인 성공 시 표시되는 환영 메시지 Element 찾기
-        welcome_element = WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located((By.XPATH, "/html/body/table/tbody/tr[4]/td[1]/table/tbody/tr[2]/td[2]"))
+        welcome_elements = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.XPATH, "//td[contains(text(), '님 환영합니다')]"))
         )
 
-        print(f"로그인 성공 여부 확인: {welcome_element.text}")
+        # 요소 리스트가 비어있지 않은지 확인
+        if welcome_elements:
+            welcome_text = welcome_elements[0].text
+            print(f"로그인 성공 여부 확인: {welcome_text}")
 
-        # 요소의 텍스트에 "환영합니다"가 포함되어 있는지 확인 (로그인 성공여부)
-        if "환영합니다" in welcome_element.text:
-            return True
-        else:
-            print("로그인 실패")
-            return False
+            # 요소의 텍스트에 "환영합니다"가 포함되어 있는지 확인 (로그인 성공여부)
+            if "환영합니다" in welcome_text:
+                return True
+        
+        print("로그인 실패")
+        return False
         
     except Exception as e:
-        print(f"로그인 검증 중 오류 {str(e)}")
+        print(f"로그인 검증 중 오류: {e}")
         return False
+        
 
 def select_radio_button(driver, wait, button_type):
     """출발/도착 라디오 버튼 선택"""
