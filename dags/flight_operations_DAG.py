@@ -1,6 +1,7 @@
 from airflow import DAG
 from airflow.models import Variable
 from airflow.operators.python import PythonOperator
+from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from datetime import datetime, timedelta
 import pendulum
 from selenium import webdriver
@@ -11,6 +12,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import chromedriver_autoinstaller
 import time
 import os
+import glob
 import pandas as pd
 
 # 한국 시간 설정
@@ -38,8 +40,6 @@ def setup_chrome_driver():
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
-        #options.add_argument('--window-size=1920,1080')
-        #options.add_argument('--disable-extensions')
 
         options.binary_location = '/usr/bin/google-chrome'
         
@@ -207,9 +207,6 @@ def download_daily_data(target_date, data_type, download_path):
                 windows = driver.window_handles
                 new_window = [window for window in windows if window != main_window][0]
                 driver.switch_to.window(new_window)
-
-                #driver.set_page_load_timeout(600)  # 타임아웃 시간 10분으로 증가
-                #driver.get("https://www.airportal.go.kr/life/airinfo/FlightScheduleToExcel.jsp")
                 
                 # 페이지가 실제로 로드되었는지 확인
                 wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.iradio_square-green")))
@@ -263,17 +260,16 @@ def download_daily_data(target_date, data_type, download_path):
         
         # 다운로드된 파일명 변경
         time.sleep(5)  # 파일 다운로드 완료 대기
-        files = os.listdir(download_path)
-        excel_files = [f for f in files if f.startswith('항공기출도착현황')]
+        file = os.listdir(download_path)
+        # 아직 이름이 변경되지 않은 파일만
+        excel_file = [f for f in file if f.startswith('항공기출도착현황') and data_type not in f]
         
-        for file in excel_files:
-            if '출발' not in file and '도착' not in file:  # 아직 이름이 변경되지 않은 파일만
-                old_path = os.path.join(download_path, file)
-                new_filename = f"항공기출도착현황_{data_type}.xlsx"
-                new_path = os.path.join(download_path, new_filename)
-                os.rename(old_path, new_path)
-                print(f"파일명 변경: {file} -> {new_filename}")
-                break
+        if excel_file:
+            old_path = os.path.join(download_path, excel_file[0])
+            new_filename = f"flight_operations_{data_type}_{target_date.strftime('%Y%m%d')}.xlsx"
+            new_path = os.path.join(download_path, new_filename)
+            os.rename(old_path, new_path)
+            print(f"파일명 변경: {file} -> {new_filename}")
                 
         return True
         
@@ -286,34 +282,26 @@ def download_daily_data(target_date, data_type, download_path):
 
 def save_to_s3(**context):
     """S3 업로드 함수"""
-    from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-    
     s3_hook = S3Hook(aws_conn_id='aws_default')
     bucket_name = 'team5-s3'
+    
     download_path = os.path.join(os.path.expanduser('~'), 'Downloads')
-
-    execution_date = context['execution_date']
-    target_date = execution_date.in_timezone(KST) - timedelta(days=1)
-    date_str = target_date.strftime('%Y%m%d')
     
     try:
-        # 이름이 변경된 파일 찾기
-        files = [f for f in os.listdir(download_path) if f.startswith('항공기출도착현황_')]
-        
+        files = glob.glob(os.path.join(download_path, '*.xlsx'))
+        print(f"발견된 파일들: {files}")
+
         if not files:
             raise FileNotFoundError("처리할 파일을 찾을 수 없습니다")
         
-        for file in files:
-            local_path = os.path.join(download_path, file)
-            # 파일명에서 출발/도착 구분 (_출발.xlsx 또는 _도착.xlsx)
-            operation_type = file.split('_')[1].split('.')[0]  # "출발" 또는 "도착" 추출
-            
+        for file_path in files:
+            file_name = os.path.basename(file_path)
             # S3 키 생성
-            s3_key = f'raw_data/flight_operations/flight_operations_{date_str}_{operation_type}.xlsx'
+            s3_key = f'raw_data/flight_operations/{file_name}'
             
             # S3에 업로드
             s3_hook.load_file(
-                filename=local_path,
+                filename=file_path,
                 key=s3_key,
                 bucket_name=bucket_name,
                 replace=True
@@ -321,7 +309,8 @@ def save_to_s3(**context):
             print(f"S3 업로드 완료: {s3_key}")
             
             # 로컬 파일 삭제
-            os.remove(local_path)
+            os.remove(file_path)
+        print("Downloads 디렉토리의 모든 Excel 파일 처리 완료료")
             
     except Exception as e:
         print(f"파일 처리 중 에러: {str(e)}")
@@ -332,7 +321,6 @@ with DAG(
     default_args=default_args,
     description='매일 전날의 항공운항 데이터 수집',
     schedule_interval='0 4 * * *', # UCT 4시 = KST 13시
-    #timezone = 'Asia/Seoul',
     tags=['flight_operations'],
     catchup=True,
 ) as dag:
