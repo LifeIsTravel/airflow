@@ -19,12 +19,13 @@ KST = pendulum.timezone("Asia/Seoul")
 # DAG 기본 설정
 default_args = {
     'owner': 'nykim',
-    'depends_on_past': False,
+    'depends_on_past': False, # 이전 DAG 실행 상태와 무관하게 실행
     'start_date': datetime(2024, 12, 24, tzinfo=KST),
     'retries': 2,
     'retry_delay': timedelta(minutes=5),
 }
 
+# 앞에 Chrome이랑 Chrome Driver를 EC2에 설치해야함.
 def setup_chrome_driver():
     """EC2용 Chrome WebDriver 설정"""
     try:
@@ -119,16 +120,27 @@ def input_date_with_retry(driver, input_element, date_value):
         time.sleep(0.5)
         
         current_value = input_element.get_attribute('value')
+        print(f"입력 시도 {attempt + 1}: 날짜 값 = {current_value}")
+
         if current_value == date_value:
-            break
+            print(f"날짜 입력 성공: {current_value}")
+            return True
         
         print(f"날짜 입력 재시도 {attempt + 1}/{max_attempts}")
         time.sleep(1)
+
+    print(f"날짜 입력 최종 실패: 목표 날짜 {date_value}, 현재 값 {current_value}")
+    return False
 
 def download_daily_data(target_date, data_type, download_path):
     """일일 데이터 다운로드"""
     driver = None
     try:
+        # 다운로드 경로 설정 (airflow 사용자의 Downloads 디렉토리)
+        # 이미 디렉토리가 있다면 생성하지 않고 없다면 새로 생성
+        download_path = os.path.join(os.apth.expanduser('~'), 'Downloads')
+        os.makedirs(download_path, exist_ok=True)
+        
         driver = setup_chrome_driver()
         wait = WebDriverWait(driver, 120)
         
@@ -214,13 +226,21 @@ def download_daily_data(target_date, data_type, download_path):
             raise Exception(f"{data_type} 버튼 선택 실패")
         
         date_str = target_date.strftime('%Y%m%d')
+        print(f"선택할 날짜: {date_str}")
         
         start_date_input = wait.until(EC.presence_of_element_located((By.NAME, "sDate")))
-        input_date_with_retry(driver, start_date_input, date_str)
+        start_date_success = input_date_with_retry(driver, start_date_input, date_str)
         
         end_date_input = driver.find_element(By.NAME, "eDate")
-        input_date_with_retry(driver, end_date_input, date_str)
+        end_date_success = input_date_with_retry(driver, end_date_input, date_str)
         
+        # 날짜 입력 검증
+        if not (start_date_success and end_date_success):
+            raise Exception(f"날짜 입력 실패: {date_str}")
+        
+        # 검색 버튼 클릭 전 최종 날짜 확인 로그
+        print(f"시작 날짜 입력값: {start_date_input.get_attribute('value')}")
+        print(f"종료 날짜 입력값: {end_date_input.get_attribute('value')}")
         time.sleep(1)
         
         search_button = wait.until(
@@ -237,7 +257,7 @@ def download_daily_data(target_date, data_type, download_path):
         driver.execute_script("arguments[0].click();", download_button)
         
         print("다운로드 진행 중...")
-        time.sleep(300)
+        time.sleep(60)
         
         print(f"{target_date.strftime('%Y-%m-%d')} {data_type} 데이터 다운로드 완료")
         
@@ -270,7 +290,7 @@ def save_to_s3(**context):
     
     s3_hook = S3Hook(aws_conn_id='aws_default')
     bucket_name = 'team5-s3'
-    download_path = '/var/lib/airflow/data'
+    download_path = os.path.join(os.apth.expanduser('~'), 'Downloads')
 
     execution_date = context['execution_date']
     target_date = execution_date.in_timezone(KST) - timedelta(days=1)
@@ -319,7 +339,7 @@ with DAG(
     def download_task_function(**context):
         execution_date = context['execution_date']
         target_date = execution_date.in_timezone(KST) - timedelta(days=1)
-        download_path = '/var/lib/airflow/data'  # EC2 환경의 경로
+        download_path = os.path.join(os.apth.expanduser('~'), 'Downloads')  # EC2 환경의 경로
         
         for data_type in ["출발", "도착"]:
             download_daily_data(target_date, data_type, download_path)
