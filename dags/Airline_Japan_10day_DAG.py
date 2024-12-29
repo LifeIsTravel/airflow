@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
-from distutils.file_util import copy_file
 
 import pytz
 from airflow import DAG
@@ -175,12 +174,14 @@ def read_parquet_files_from_s3(bucket_name, prefix):
 
     # .parquet으로 끝나는 파일만 필터링
     parquet_files = [key for key in keys if key.endswith('.parquet')]
+    # 'transform_data/'를 경로에서 제거
+    parquet_files = [key.replace('transform_data/', '') for key in parquet_files]
 
     # 필터링된 .parquet 파일 목록 반환
     return parquet_files
 
 
-def bulk_copy_to_snowflake(parquet_file, table_name):
+def bulk_copy_to_snowflake(parquet_file):
     # Snowflake Hook 인스턴스 생성
     snowflake_hook = SnowflakeHook(snowflake_conn_id='snowflake_conn')
     logging.info("Snowflake hook created")
@@ -304,8 +305,7 @@ def load(execution_time, transform_data):
 
     # Snowflake 테이블에 데이터 BULK COPY (Upsert 방식)
     if parquet_file:
-        table_name = 'TEAM5.raw_data.FLIGHT_DATA'  # 저장할 테이블
-        bulk_copy_to_snowflake(parquet_file, table_name)
+        bulk_copy_to_snowflake(parquet_file)
         logging.info(f"Copied {len(parquet_file)} files into Snowflake.")
     else:
         logging.info("No parquet files found to process.")
