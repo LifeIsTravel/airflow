@@ -24,15 +24,15 @@ client = ApifyClient(api_key)
 airports = {
     "FUK": "후쿠오카",
     # "HKG": "홍콩",
-    # "KIX": "오사카/간사이",
+    "KIX": "오사카/간사이",
     # "PVG": "상하이/푸동",
-    # "NRT": "도쿄/나리타",
+    "NRT": "도쿄/나리타",
     # "BKK": "방콕/수완나품",
     # "SEA": "시애틀",
     # "NGO": "나고야",
     # "TAO": "칭다오",
     # "SIN": "싱가포르",
-    # "CTS": "삿포로",
+    "CTS": "삿포로",
 }
 
 
@@ -145,7 +145,7 @@ async def main(execution_time):
     execution_datetime = trans_to_kst(execution_time)
 
     # 날짜 계산 range(n) -> 앞으로 n일 계산
-    dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(2)]
+    dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(10)]
 
     # 각 날짜에 대해 작업을 수행
     tasks = []
