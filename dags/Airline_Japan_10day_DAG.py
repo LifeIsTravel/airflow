@@ -166,7 +166,7 @@ async def main(execution_time):
 
 # S3에서 Parquet 파일을 읽어오는 함수 (파일 목록만 확인)
 def read_parquet_files_from_s3(bucket_name, prefix):
-    s3_hook = S3Hook(aws_conn_id="aws_s3")
+    s3_hook = S3Hook(aws_conn_id="aws_default")
 
     # S3 버킷에서 Parquet 파일 목록 가져오기
     keys = s3_hook.list_keys(bucket_name, prefix=prefix)
