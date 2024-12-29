@@ -9,9 +9,10 @@ from airflow.decorators import task
 from airflow.models import Variable
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.amazon.aws.operators.lambda_function import LambdaInvokeFunctionOperator
+from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from apify_client import ApifyClient
 
-# 로깅 설정 
+# 로깅 설정
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -143,7 +144,7 @@ async def main(execution_time):
 
     execution_datetime = trans_to_kst(execution_time)
 
-    # 날짜 계산
+    # 날짜 계산 range(n) -> 앞으로 n일 계산
     dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(10)]
 
     # 각 날짜에 대해 작업을 수행
@@ -161,6 +162,63 @@ async def main(execution_time):
     # 모든 작업을 동시에 실행
     await asyncio.gather(*tasks)
     logging.info("모든 비행기 데이터 수집 작업 완료!")
+
+
+# S3에서 Parquet 파일을 읽어오는 함수 (파일 목록만 확인)
+def read_parquet_files_from_s3(bucket_name, prefix):
+    s3_hook = S3Hook(aws_conn_id="aws_default")
+
+    # S3 버킷에서 Parquet 파일 목록 가져오기
+    keys = s3_hook.list_keys(bucket_name, prefix=prefix)
+    logging.info("keys:", keys)
+
+    # .parquet으로 끝나는 파일만 필터링
+    parquet_files = [key for key in keys if key.endswith('.parquet')]
+    # 'transform_data/'를 경로에서 제거
+    parquet_files = [key.replace('transform_data/', '') for key in parquet_files]
+
+    # 필터링된 .parquet 파일 목록 반환
+    return parquet_files
+
+
+def bulk_copy_to_snowflake(parquet_file):
+    # Snowflake Hook 인스턴스 생성
+    snowflake_hook = SnowflakeHook(snowflake_conn_id='snowflake_conn')
+    logging.info("Snowflake hook created")
+
+    delete_query = f"""
+            DROP STAGE IF EXISTS TEAM5.raw_data.team5_stage;
+        """
+    snowflake_hook.run(delete_query)
+    logging.info("DROP STAGE Complete")
+
+    create_query = f"""
+            CREATE STAGE TEAM5.raw_data.team5_stage
+            STORAGE_INTEGRATION = TEAM5_S3_INTEGRATION
+            URL = 's3://team5-s3/transform_data/'
+        """
+    snowflake_hook.run(create_query)
+    logging.info("CREATE STAGE Complete")
+
+    # 특정 파일 패턴을 지정하여 COPY
+    copy_query = f"""
+        COPY INTO "TEAM5"."RAW_DATA"."FLIGHT_DATA"
+        FROM (
+            SELECT $1:extracted_at::VARCHAR, $1:departure_date::VARCHAR, $1:departure_display_code::VARCHAR, $1:departure_name::VARCHAR, $1:arrival_display_code::VARCHAR, $1:arrival_name::VARCHAR, $1:carrier_names::VARIANT, $1:departure_time::VARCHAR, $1:arrival_time::VARCHAR, $1:agent_name::VARCHAR, $1:amount::FLOAT, $1:url::VARIANT, $1:last_updated::VARCHAR, $1:stop_count::VARCHAR
+            FROM '@"TEAM5"."RAW_DATA"."TEAM5_STAGE"'
+        )
+        FILES = ('{parquet_file[0]}')
+        FILE_FORMAT = (
+            TYPE=PARQUET,
+            REPLACE_INVALID_CHARACTERS=TRUE,
+            BINARY_AS_TEXT=FALSE
+        )
+        ON_ERROR=ABORT_STATEMENT;
+    """
+    snowflake_hook.run(copy_query)
+    logging.info("COPY INTO Complete")
+
+    logging.info("Loaded clear!")
 
 
 # @task를 사용하여 Airflow 태스크로 등록
@@ -229,6 +287,28 @@ def transform(execution_time, extract_data):
 @task
 def load(execution_time, transform_data):
     logging.info(f"{transform_data} Load 태스크 시작... (실행 시간: {execution_time})")
+
+    execution_datetime = trans_to_kst(execution_time)
+
+    # 날짜와 시간을 원하는 형식으로 추출
+    year_str = f"{execution_datetime.year}"  # '2024' 형태
+    month_str = f"{execution_datetime.month:02d}"  # '12' 형태
+    day_str = f"{execution_datetime.day:02d}"  # '20' 형태
+    time_str = execution_datetime.strftime("%H-%M")  # 14-00 형태
+
+    # 폴더 경로 생성 (형식: raw_data/flights/년/월/일/시-분/)
+    folder_path = f"transform_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/"
+    logging.info(f"폴더 경로: {folder_path}")
+
+    s3_bucket = "team5-s3"  # S3 버킷 이름
+    parquet_file = read_parquet_files_from_s3(s3_bucket, folder_path)
+
+    # Snowflake 테이블에 데이터 BULK COPY (Upsert 방식)
+    if parquet_file:
+        bulk_copy_to_snowflake(parquet_file)
+        logging.info(f"Copied {len(parquet_file)} files into Snowflake.")
+    else:
+        logging.info("No parquet files found to process.")
 
 
 with DAG(
