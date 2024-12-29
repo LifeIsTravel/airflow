@@ -193,7 +193,7 @@ def bulk_copy_to_snowflake(parquet_file, table_name):
     create_query = f"""
             CREATE STAGE TEAM5.raw_data.team5_stage
             STORAGE_INTEGRATION = TEAM5_S3_INTEGRATION
-            URL = 's3://team5-s3/{parquet_file[0]}'
+            URL = 's3://team5-s3/transform_data/'
         """
     snowflake_hook.run(create_query)
     logging.info("CREATE STAGE Complete")
