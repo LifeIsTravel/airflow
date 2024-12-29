@@ -203,6 +203,7 @@ def bulk_copy_to_snowflake(parquet_file, table_name):
             COPY INTO {table_name}
             FROM @TEAM5.raw_data.team5_stage/{parquet_file[0]}
             FILE_FORMAT = (TYPE = 'PARQUET')
+            FORCE = TRUE
             MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
             ON_ERROR = 'SKIP_FILE';
         """
