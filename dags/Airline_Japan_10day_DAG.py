@@ -187,7 +187,7 @@ def bulk_copy_to_snowflake(parquet_file, table_name):
     # 특정 파일 패턴을 지정하여 COPY
     copy_query = f"""
             COPY INTO {table_name}
-            FROM @TEAM5.raw_data.team5_stage/{parquet_file}
+            FROM @TEAM5.raw_data.team5_stage/{parquet_file[0]}
             FILE_FORMAT = (TYPE = 'PARQUET')
             MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
             ON_ERROR = 'SKIP_FILE';
