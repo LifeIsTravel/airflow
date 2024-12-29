@@ -184,6 +184,20 @@ def bulk_copy_to_snowflake(parquet_file, table_name):
     snowflake_hook = SnowflakeHook(snowflake_conn_id='snowflake_conn')
     logging.info("Snowflake hook created")
 
+    delete_query = f"""
+            DROP STAGE IF EXISTS TEAM5.raw_data.team5_stage;
+        """
+    snowflake_hook.run(delete_query)
+    logging.info("DROP STAGE Complete")
+
+    create_query = f"""
+            CREATE STAGE TEAM5.raw_data.team5_stage
+            STORAGE_INTEGRATION = TEAM5_S3_INTEGRATION
+            URL = 's3://team5-s3/{parquet_file[0]}'
+        """
+    snowflake_hook.run(create_query)
+    logging.info("CREATE STAGE Complete")
+
     # 특정 파일 패턴을 지정하여 COPY
     copy_query = f"""
             COPY INTO {table_name}
@@ -193,6 +207,8 @@ def bulk_copy_to_snowflake(parquet_file, table_name):
             ON_ERROR = 'SKIP_FILE';
         """
     snowflake_hook.run(copy_query)
+    logging.info("COPY INTO Complete")
+
     logging.info("Loaded clear!")
 
 
