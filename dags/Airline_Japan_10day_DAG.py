@@ -205,7 +205,7 @@ def bulk_copy_to_snowflake(parquet_file, table_name):
             FILE_FORMAT = (TYPE = 'PARQUET')
             FORCE = TRUE
             MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
-            ON_ERROR = 'SKIP_FILE';
+            ON_ERROR = 'CONTINUE';
         """
     snowflake_hook.run(copy_query)
     logging.info("COPY INTO Complete")
