@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
+from distutils.file_util import copy_file
 
 import pytz
 from airflow import DAG
@@ -200,13 +201,19 @@ def bulk_copy_to_snowflake(parquet_file, table_name):
 
     # 특정 파일 패턴을 지정하여 COPY
     copy_query = f"""
-            COPY INTO {table_name}
-            FROM @TEAM5.raw_data.team5_stage/{parquet_file[0]}
-            FILE_FORMAT = (TYPE = 'PARQUET')
-            FORCE = TRUE
-            MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
-            ON_ERROR = 'CONTINUE';
-        """
+        COPY INTO "TEAM5"."RAW_DATA"."FLIGHT_DATA"
+        FROM (
+            SELECT $1:extracted_at::VARCHAR, $1:departure_date::VARCHAR, $1:departure_display_code::VARCHAR, $1:departure_name::VARCHAR, $1:arrival_display_code::VARCHAR, $1:arrival_name::VARCHAR, $1:carrier_names::VARIANT, $1:departure_time::VARCHAR, $1:arrival_time::VARCHAR, $1:agent_name::VARCHAR, $1:amount::FLOAT, $1:url::VARIANT, $1:last_updated::VARCHAR, $1:stop_count::VARCHAR
+            FROM '@"TEAM5"."RAW_DATA"."TEAM5_STAGE"'
+        )
+        FILES = ('{parquet_file[0]}')
+        FILE_FORMAT = (
+            TYPE=PARQUET,
+            REPLACE_INVALID_CHARACTERS=TRUE,
+            BINARY_AS_TEXT=FALSE
+        )
+        ON_ERROR=ABORT_STATEMENT;
+    """
     snowflake_hook.run(copy_query)
     logging.info("COPY INTO Complete")
 
