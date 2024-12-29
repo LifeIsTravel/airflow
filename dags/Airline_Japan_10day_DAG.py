@@ -145,7 +145,7 @@ async def main(execution_time):
     execution_datetime = trans_to_kst(execution_time)
 
     # 날짜 계산 range(n) -> 앞으로 n일 계산
-    dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1)]
+    dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(2)]
 
     # 각 날짜에 대해 작업을 수행
     tasks = []
