@@ -9,7 +9,6 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 import openmeteo_requests
-import requests_cache
 from retry_requests import retry
 
 logging.basicConfig(
@@ -93,9 +92,6 @@ def fetch_weather_data(execution_date, airport):
     s3_bucket = "team5-s3"  # S3 버킷 이름
     s3_key = f"raw_data/weather/{year_str}/{month_str}/{day_str}/{airport['name']}_past_{time_str.split('-')[0]}.csv"  # S3 객체 키
     upload_to_s3(df, s3_bucket, s3_key)
-
-    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-    retry_session.timeout = 30
 
 
 # 미래 데이터
