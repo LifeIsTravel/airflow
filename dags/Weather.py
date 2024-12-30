@@ -77,8 +77,8 @@ def fetch_weather_data(execution_date, airport):
 
     hourly_data = {
         "date": pd.date_range(
-            start=pd.to_datetime(hourly.Time(), unit="s", utc=True),
-            end=pd.to_datetime(hourly.TimeEnd(), unit="s", utc=True),
+            start=pd.to_datetime(hourly.Time(), unit="s", utc=True).tz_convert(airport['timezone']),
+            end=pd.to_datetime(hourly.TimeEnd(), unit="s", utc=True).tz_convert(airport['timezone']),
             freq=pd.Timedelta(seconds=hourly.Interval()),
             inclusive="left"
         ),
