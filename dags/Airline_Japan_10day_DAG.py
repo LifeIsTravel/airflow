@@ -267,7 +267,7 @@ def transform(execution_time, extract_data):
 
         glue_job = GlueJobOperator(
             task_id='run_glue_job',
-            job_name='team5-glue-test',  # Glue 작업 이름
+            job_name='team5-glue-flight',  # Glue 작업 이름
             region_name='ap-northeast-2',
             # script_location='s3://your-bucket/your-script.py',  # Glue 스크립트 경로
             # aws_conn_id='aws_default',  # AWS 연결 ID (Airflow 연결 설정에 맞게 수정)
