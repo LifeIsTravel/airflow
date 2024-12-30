@@ -8,7 +8,7 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.models import Variable
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from airflow.providers.amazon.aws.operators.lambda_function import LambdaInvokeFunctionOperator
+from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from apify_client import ApifyClient
 
@@ -24,15 +24,15 @@ client = ApifyClient(api_key)
 airports = {
     "FUK": "후쿠오카",
     # "HKG": "홍콩",
-    "KIX": "오사카/간사이",
+    # "KIX": "오사카/간사이",
     # "PVG": "상하이/푸동",
-    "NRT": "도쿄/나리타",
+    # "NRT": "도쿄/나리타",
     # "BKK": "방콕/수완나품",
     # "SEA": "시애틀",
     # "NGO": "나고야",
     # "TAO": "칭다오",
     # "SIN": "싱가포르",
-    "CTS": "삿포로",
+    # "CTS": "삿포로",
 }
 
 
@@ -145,7 +145,7 @@ async def main(execution_time):
     execution_datetime = trans_to_kst(execution_time)
 
     # 날짜 계산 range(n) -> 앞으로 n일 계산
-    dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(10)]
+    dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(2)]
 
     # 각 날짜에 대해 작업을 수행
     tasks = []
@@ -244,42 +244,42 @@ def transform(execution_time, extract_data):
     folder_path = f"raw_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/"
     logging.info(f"폴더 경로: {folder_path}")
 
-    # Glue 작업에 전달할 인수 설정
-    arguments = {
-        '--folder_path': folder_path  # Glue 작업에 folder_path 인수 전달
-    }
-
     # AWS Glue? lambda 작업 실행
     try:
-        payload = f'{{"folder_path": "{folder_path}"}}'
-
-        # Lambda 호출
-        invoke_lambda = LambdaInvokeFunctionOperator(
-            task_id='invoke_lambda_task',
-            function_name='Team5-test2',  # Lambda 함수 이름
-            invocation_type='RequestResponse',  # 동기 호출
-            payload=payload,  # Lambda에 전달할 JSON 형식의 페이로드
-            aws_conn_id='aws_default',  # 사용하려는 AWS 연결 ID
-            region_name='ap-northeast-2',  # 리전 명시
-        )
-        invoke_lambda.execute(context={})
-        logging.info(f"AWS lambda 실행 시작.")
-
-        # glue_job = GlueJobOperator(
-        #     task_id='run_glue_job',
-        #     job_name='team5-glue-test',  # Glue 작업 이름
-        #     region_name='ap-northeast-2',
-        #     # script_location='s3://your-bucket/your-script.py',  # Glue 스크립트 경로
-        #     # aws_conn_id='aws_default',  # AWS 연결 ID (Airflow 연결 설정에 맞게 수정)
-        #     script_args=arguments  # 인수 전달
-        # )
+        # payload = f'{{"folder_path": "{folder_path}"}}'
         #
-        # # Glue 작업 실행
-        # glue_job.execute(context={})
-        # logging.info(f"AWS Glue Job 실행 시작.")
+        # # Lambda 호출
+        # invoke_lambda = LambdaInvokeFunctionOperator(
+        #     task_id='invoke_lambda_task',
+        #     function_name='Team5-test2',  # Lambda 함수 이름
+        #     invocation_type='RequestResponse',  # 동기 호출
+        #     payload=payload,  # Lambda에 전달할 JSON 형식의 페이로드
+        #     aws_conn_id='aws_default',  # 사용하려는 AWS 연결 ID
+        #     region_name='ap-northeast-2',  # 리전 명시
+        # )
+        # invoke_lambda.execute(context={})
+        # logging.info(f"AWS lambda 실행 시작.")
+
+        # Glue 작업에 전달할 인수 설정
+        arguments = {
+            '--folder_path': folder_path  # Glue 작업에 folder_path 인수 전달
+        }
+
+        glue_job = GlueJobOperator(
+            task_id='run_glue_job',
+            job_name='team5-glue-test',  # Glue 작업 이름
+            region_name='ap-northeast-2',
+            # script_location='s3://your-bucket/your-script.py',  # Glue 스크립트 경로
+            # aws_conn_id='aws_default',  # AWS 연결 ID (Airflow 연결 설정에 맞게 수정)
+            script_args=arguments  # 인수 전달
+        )
+
+        # Glue 작업 실행
+        glue_job.execute(context={})
+        logging.info(f"AWS Glue Job 실행 시작.")
     except Exception as e:
-        # logging.error(f"AWS Glue 작업 실행 중 오류 발생: {e}")
-        logging.error(f"AWS Lambda 작업 실행 중 오류 발생: {e}")
+        logging.error(f"AWS Glue 작업 실행 중 오류 발생: {e}")
+        # logging.error(f"AWS Lambda 작업 실행 중 오류 발생: {e}")
 
     return "transform 완료!"
 
@@ -300,15 +300,15 @@ def load(execution_time, transform_data):
     folder_path = f"transform_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/"
     logging.info(f"폴더 경로: {folder_path}")
 
-    s3_bucket = "team5-s3"  # S3 버킷 이름
-    parquet_file = read_parquet_files_from_s3(s3_bucket, folder_path)
-
-    # Snowflake 테이블에 데이터 BULK COPY (Upsert 방식)
-    if parquet_file:
-        bulk_copy_to_snowflake(parquet_file)
-        logging.info(f"Copied {len(parquet_file)} files into Snowflake.")
-    else:
-        logging.info("No parquet files found to process.")
+    # s3_bucket = "team5-s3"  # S3 버킷 이름
+    # parquet_file = read_parquet_files_from_s3(s3_bucket, folder_path)
+    #
+    # # Snowflake 테이블에 데이터 BULK COPY (Upsert 방식)
+    # if parquet_file:
+    #     bulk_copy_to_snowflake(parquet_file)
+    #     logging.info(f"Copied {len(parquet_file)} files into Snowflake.")
+    # else:
+    #     logging.info("No parquet files found to process.")
 
 
 with DAG(
