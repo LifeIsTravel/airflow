@@ -219,6 +219,24 @@ def bulk_copy_to_snowflake(parquet_files):
     snowflake_hook.run(copy_query)
     logging.info("COPY INTO Complete")
 
+    # 추가된 raw_data 바탕으로 analytics 테이블 업데이트
+    create_analytics_query = """
+        CREATE OR REPLACE TABLE TEAM5.analytics.ex_min_amount_flight AS
+        SELECT substring(extracted_at, 1, 8) AS extracted_at, amount
+        FROM (
+            SELECT *,
+                   ROW_NUMBER() OVER (PARTITION BY substring(extracted_at, 1, 8) ORDER BY CAST(amount AS DOUBLE) ASC) AS row_num
+            FROM TEAM5.raw_data.flight_data
+            WHERE departure_date = '250103'
+              AND departure_display_code = 'FUK'
+              AND arrival_display_code = 'ICN'
+        ) AS ranked_df
+        WHERE row_num = 1
+        ORDER BY extracted_at;
+        """
+    snowflake_hook.run(create_analytics_query)
+    logging.info("CREATE OR REPLACE TABLE Complete")
+
     logging.info("Loaded clear!")
 
 
