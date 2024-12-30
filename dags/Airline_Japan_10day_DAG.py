@@ -12,7 +12,7 @@ from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from apify_client import ApifyClient
 
-# 로깅 설정
+# 로깅설정
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
