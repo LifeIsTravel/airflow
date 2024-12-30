@@ -301,15 +301,15 @@ def load(execution_time, transform_data):
     folder_path = f"transform_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/"
     logging.info(f"폴더 경로: {folder_path}")
 
-    # s3_bucket = "team5-s3"  # S3 버킷 이름
-    # parquet_file = read_parquet_files_from_s3(s3_bucket, folder_path)
-    #
-    # # Snowflake 테이블에 데이터 BULK COPY (Upsert 방식)
-    # if parquet_file:
-    #     bulk_copy_to_snowflake(parquet_file)
-    #     logging.info(f"Copied {len(parquet_file)} files into Snowflake.")
-    # else:
-    #     logging.info("No parquet files found to process.")
+    s3_bucket = "team5-s3"  # S3 버킷 이름
+    parquet_file = read_parquet_files_from_s3(s3_bucket, folder_path)
+
+    # Snowflake 테이블에 데이터 BULK COPY (Upsert 방식)
+    if parquet_file:
+        bulk_copy_to_snowflake(parquet_file)
+        logging.info(f"Copied {len(parquet_file)} files into Snowflake.")
+    else:
+        logging.info("No parquet files found to process.")
 
 
 with DAG(
