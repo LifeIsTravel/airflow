@@ -1,5 +1,6 @@
 import logging
 import io
+import requests
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
@@ -8,7 +9,6 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 import openmeteo_requests
-import requests_cache
 from retry_requests import retry
 
 logging.basicConfig(
@@ -56,9 +56,9 @@ def fetch_weather_data(execution_date, airport):
     day_str = f"{execution_datetime.day:02d}"  # '20' 형태
     time_str = execution_datetime.strftime("%H")  # '14' 형태
     extracted_at_str = f"{year_str}{month_str}{day_str}{time_str}"
-
-    cache_session = requests_cache.CachedSession('.cache', expire_after = timedelta(minutes=10))
-    retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
+    
+    session = requests.Session()
+    retry_session = retry(session, retries=5, backoff_factor=0.2)
     openmeteo = openmeteo_requests.Client(session = retry_session)
 
     url = "https://archive-api.open-meteo.com/v1/archive"
@@ -93,9 +93,6 @@ def fetch_weather_data(execution_date, airport):
     s3_key = f"raw_data/weather/{year_str}/{month_str}/{day_str}/{airport['name']}_past_{time_str.split('-')[0]}.csv"  # S3 객체 키
     upload_to_s3(df, s3_bucket, s3_key)
 
-    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-    retry_session.timeout = 30
-
 
 # 미래 데이터
 def fetch_forecast_data(execution_date, airport):
@@ -106,8 +103,8 @@ def fetch_forecast_data(execution_date, airport):
     time_str = execution_datetime.strftime("%H") # '14' 형태
     extracted_at_str = f"{year_str}{month_str}{day_str}{time_str}"
 
-    cache_session = requests_cache.CachedSession('.cache', expire_after=timedelta(minutes=10))
-    retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
+    session = requests.Session()
+    retry_session = retry(session, retries=5, backoff_factor=0.2)
     openmeteo = openmeteo_requests.Client(session=retry_session)
 
     url = "https://api.open-meteo.com/v1/forecast"
