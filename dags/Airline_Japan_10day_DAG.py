@@ -181,7 +181,7 @@ def read_parquet_files_from_s3(bucket_name, prefix):
     return parquet_files
 
 
-def bulk_copy_to_snowflake(parquet_file):
+def bulk_copy_to_snowflake(parquet_files):
     # Snowflake Hook 인스턴스 생성
     snowflake_hook = SnowflakeHook(snowflake_conn_id='snowflake_conn')
     logging.info("Snowflake hook created")
@@ -200,14 +200,15 @@ def bulk_copy_to_snowflake(parquet_file):
     snowflake_hook.run(create_query)
     logging.info("CREATE STAGE Complete")
 
-    # 특정 파일 패턴을 지정하여 COPY
+    # 여러 파일 패턴을 지정하여 COPY
+    files_list = "', '".join(parquet_files)  # 파일 목록을 '파일1', '파일2', ... 형태로 변환
     copy_query = f"""
         COPY INTO "TEAM5"."RAW_DATA"."FLIGHT_DATA"
         FROM (
             SELECT $1:extracted_at::VARCHAR, $1:departure_date::VARCHAR, $1:departure_display_code::VARCHAR, $1:departure_name::VARCHAR, $1:arrival_display_code::VARCHAR, $1:arrival_name::VARCHAR, $1:carrier_names::VARIANT, $1:departure_time::VARCHAR, $1:arrival_time::VARCHAR, $1:agent_name::VARCHAR, $1:amount::FLOAT, $1:url::VARIANT, $1:last_updated::VARCHAR, $1:stop_count::VARCHAR
             FROM '@"TEAM5"."RAW_DATA"."TEAM5_STAGE"'
         )
-        FILES = ('{parquet_file[0]}')
+        FILES = ('{files_list}')
         FILE_FORMAT = (
             TYPE=PARQUET,
             REPLACE_INVALID_CHARACTERS=TRUE,
