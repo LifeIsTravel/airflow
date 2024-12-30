@@ -178,7 +178,7 @@ def upload_to_s3(local_file, bucket, s3_file):
         print(f"업로드 중 에러 발생: {e}")
         return False
     
-def combine_excel_files(download_path, s3_bucket='team5-s3'):
+def combine_excel_files(download_path, data_type, s3_bucket='team5-s3'):
     print("\n엑셀 파일 통합 시작...")
     
     try:
@@ -186,7 +186,7 @@ def combine_excel_files(download_path, s3_bucket='team5-s3'):
         all_files = glob.glob(os.path.join(download_path, "항공기출도착현황*.xlsx"))
         if not all_files:
             print("통합할 엑셀 파일이 없습니다.")
-            return
+            return False
         
         print(f"총 {len(all_files)}개의 파일을 찾았습니다.")
         combined_df = pd.DataFrame()
@@ -209,12 +209,12 @@ def combine_excel_files(download_path, s3_bucket='team5-s3'):
 
         if not combined_df.empty:
             # 로컬 파일로 저장
-            local_output_file = os.path.join(download_path, "flight_operations_20240101_to_20241222.parquet")
-            combined_df.to_parquet(local_output_file, engine='pyarrow')
+            local_output_file = os.path.join(download_path, f"flight_operations_{data_type}_20240101_to_20241222.xlsx")
+            combined_df.to_excel(local_output_file, index=False)
             print(f"데이터 통합 완료: {local_output_file}")
         
             # S3에 업로드
-            s3_file_path = f"raw_data/flight_operations/flight_operations_20240101_to_20241222.parquet"
+            s3_file_path = f"raw_data/flight_operations/flight_operations_{data_type}_20240101_to_20241222.xlsx"
             upload_to_s3(local_output_file, s3_bucket, s3_file_path)
             
     except Exception as e:
@@ -268,24 +268,24 @@ def test_login_and_download(download_path=r"D:\Downloads"):
         
         # 다운로드 기간 설정
         start_date = datetime(2024, 1, 1)
-        yesterday = datetime.now() - timedelta(days=1)
+        end_date = datetime(2024, 12, 22)
         
-        print(f"\n데이터 수집 기간: {start_date.strftime('%Y-%m-%d')} ~ {yesterday.strftime('%Y-%m-%d')}")
+        print(f"\n데이터 수집 기간: {start_date.strftime('%Y-%m-%d')} ~ {end_date.strftime('%Y-%m-%d')}")
         
         # 출발, 도착 데이터 각각 다운로드
         for data_type in ["출발", "도착"]:
             current_date = start_date
-            while current_date <= yesterday:
+            while current_date <= end_date:
                 try:
-                    download_monthly_data(driver, wait, current_date, yesterday, data_type)
+                    download_monthly_data(driver, wait, current_date, end_date, data_type)
                     current_date = (current_date.replace(day=1) + timedelta(days=32)).replace(day=1)
                     time.sleep(3)
                 except Exception as e:
                     print(f"{current_date.strftime('%Y-%m')} {data_type} 다운로드 중 에러: {str(e)}")
                     current_date = (current_date.replace(day=1) + timedelta(days=32)).replace(day=1)
         
-        # 다운로드된 파일들을 통합
-        combine_excel_files(download_path)
+            # 다운로드된 파일들을 통합 및 S3에 저장
+            combine_excel_files(download_path, data_type)
         
         print("\n모든 작업이 완료되었습니다.")
         print("통합 파일을 확인해주세요.")

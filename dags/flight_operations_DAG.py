@@ -2,6 +2,9 @@ from airflow import DAG
 from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
+from airflow.providers.amazon.aws.sensors.glue import GlueJobSensor
+
 from datetime import datetime, timedelta
 import pendulum
 from selenium import webdriver
@@ -17,15 +20,22 @@ import pandas as pd
 
 # 한국 시간 설정
 KST = pendulum.timezone("Asia/Seoul")
+# S3 버킷 이름
+BUCKET_NAME = 'team5-s3'
 
 # DAG 기본 설정
 default_args = {
     'owner': 'nykim',
     'depends_on_past': False, # 이전 DAG 실행 상태와 무관하게 실행
-    'start_date': datetime(2024, 12, 24, tzinfo=KST),
+    'start_date': datetime(2024, 12, 24, 4, 0, tzinfo=pendulum.timezone("UTC")),
     'retries': 2,
     'retry_delay': timedelta(minutes=5),
 }
+
+def get_target_date(**context):
+    """실행 날짜로부터 대상 날짜 계산"""
+    execution_date = context['execution_date']
+    return execution_date.in_timezone(KST) - timedelta(days=1)
 
 # 앞에 Chrome이랑 Chrome Driver를 EC2에 설치해야함.
 def setup_chrome_driver():
@@ -36,9 +46,9 @@ def setup_chrome_driver():
         print(f"ChromeDriver 설치 완료: {chrome_driver_path}")
         
         options = webdriver.ChromeOptions()
-        options.add_argument('--headless')  # headless 모드
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--headless')  # headless 모드, 브라우저를 화면에 표시하지 않고 백그라운드로 실행
+        options.add_argument('--no-sandbox') # 리눅스에서 root 권한으로 실행 시 필요요
+        options.add_argument('--disable-dev-shm-usage') 
         options.add_argument('--disable-gpu')
 
         options.binary_location = '/usr/bin/google-chrome'
@@ -281,7 +291,6 @@ def download_daily_data(target_date, data_type, download_path):
 def save_to_s3(**context):
     """S3 업로드 함수"""
     s3_hook = S3Hook(aws_conn_id='aws_default')
-    bucket_name = 'team5-s3'
     
     download_path = os.path.join(os.path.expanduser('~'), 'Downloads')
     
@@ -301,7 +310,7 @@ def save_to_s3(**context):
             s3_hook.load_file(
                 filename=file_path,
                 key=s3_key,
-                bucket_name=bucket_name,
+                bucket_name=BUCKET_NAME,
                 replace=True
             )
             print(f"S3 업로드 완료: {s3_key}")
@@ -314,6 +323,17 @@ def save_to_s3(**context):
         print(f"파일 처리 중 에러: {str(e)}")
         raise
 
+def get_glue_job_args(**context):
+    """Glue Job에 전달할 인자 생성"""
+    target_date = get_target_date(**context)
+
+    return {
+        '--JOB_NAME': 'team5-glue-flight_operations',
+        '--target_date': target_date.strftime('%Y%m%d'),
+        '--source_bucket': 'team5-s3',
+        '--source_prefix': 'raw_data/flight_operations'
+    }
+
 with DAG(
     'flight_operations_data_collection',
     default_args=default_args,
@@ -323,8 +343,7 @@ with DAG(
     catchup=True,
 ) as dag:
     def download_task_function(**context):
-        execution_date = context['execution_date']
-        target_date = execution_date.in_timezone(KST) - timedelta(days=1)
+        target_date = get_target_date(**context)
         download_path = os.path.join(os.path.expanduser('~'), 'Downloads')  # EC2 환경의 경로
         
         for data_type in ["출발", "도착"]:
