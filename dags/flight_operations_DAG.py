@@ -348,7 +348,7 @@ with DAG(
     description='매일 전날의 항공운항 데이터 수집',
     schedule_interval='0 4 * * *', # UCT 4시 = KST 13시
     tags=['flight_operations'],
-    catchup=True,
+    catchup=False, # False로 변경
 ) as dag:
     def download_task_function(**context):
         target_date = get_target_date(**context)
