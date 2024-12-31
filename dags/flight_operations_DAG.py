@@ -354,7 +354,7 @@ with DAG(
         target_date = get_target_date(**context)
         
         for data_type in ["출발", "도착"]:
-            download_daily_data(target_date, data_type, data_path=DOWNLOAD_PATH)
+            download_daily_data(target_date, data_type, download_path=DOWNLOAD_PATH)
     
     download_task = PythonOperator(
         task_id='download_daily_data',
