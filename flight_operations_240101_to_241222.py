@@ -8,10 +8,13 @@ from datetime import datetime, timedelta
 import pandas as pd
 import time
 import os
+import io
 import glob
 import configparser
 import logging
 import boto3
+import pyarrow
+import pyarrow.parquet as pq
 
 # 로깅 설정
 logging.basicConfig(
@@ -157,7 +160,7 @@ def download_monthly_data(driver, wait, start_date, end_limit_date, data_type):
         print(f"데이터 다운로드 중 에러: {str(e)}")
         raise e
 
-def upload_to_s3(local_file, bucket, s3_file):
+def upload_to_s3(data, bucket, s3_file, is_buffer=False):
     """
     AWS 자격증명 파일의 Team5 프로필을 사용하여 S3에 파일 업로드
     
@@ -171,9 +174,13 @@ def upload_to_s3(local_file, bucket, s3_file):
     s3 = session.client('s3')
     
     try:
-        s3.upload_file(local_file, bucket, s3_file)
-        print(f"업로드 성공: {local_file} -> s3://{bucket}/{s3_file}")
-        return True
+        if is_buffer:
+            s3.put_object(Body=data, Bucket=bucket, Key=s3_file)
+        else:
+            s3.upload_file(data, bucket, s3_file)
+        print(f"업로드 성공: s3://{bucket}/{s3_file}")
+        return True    
+
     except Exception as e:
         print(f"업로드 중 에러 발생: {e}")
         return False
@@ -200,7 +207,8 @@ def combine_excel_files(download_path, data_type, s3_bucket='team5-s3'):
                 print(f"처리 중: {os.path.basename(file)}")
                 df = pd.read_excel(file)
                 combined_df = pd.concat([combined_df, df], ignore_index=True)
-                
+                print(f"데이터 통합 완료")
+
                 # 처리 완료된 파일 삭제 
                 os.remove(file)
             except Exception as e:
@@ -208,19 +216,22 @@ def combine_excel_files(download_path, data_type, s3_bucket='team5-s3'):
         
 
         if not combined_df.empty:
-            # 로컬 파일로 저장
-            local_output_file = os.path.join(download_path, f"flight_operations_{data_type}_20240101_to_20241222.xlsx")
-            combined_df.to_excel(local_output_file, index=False)
-            print(f"데이터 통합 완료: {local_output_file}")
+            table = pyarrow.Table.from_pandas(combined_df)
+
+            # 메모리 버퍼에 Parquet 형식으로 쓰기
+            buffer = io.BytesIO()
+            pq.write_table(table, buffer)
         
             # S3에 업로드
-            s3_file_path = f"raw_data/flight_operations/flight_operations_{data_type}_20240101_to_20241222.xlsx"
-            upload_to_s3(local_output_file, s3_bucket, s3_file_path)
-            
+            s3_file_path = f"raw_data/flight_operations/flight_operations_{data_type}_20240101_to_20241222.parquet"
+            upload_to_s3(buffer.getvalue(), s3_bucket, s3_file_path, is_buffer=True)
+            print("S3 업로드 완료")
+            return True
     except Exception as e:
         print(f"파일 통합 중 에러 발생: {str(e)}")
+        return False
 
-def test_login_and_download(download_path=r"D:\Downloads"):
+def test_login_and_download(download_path=r"D:/Downloads"):
     driver = webdriver.Chrome()
     wait = WebDriverWait(driver, 20)
     
@@ -295,7 +306,8 @@ def test_login_and_download(download_path=r"D:\Downloads"):
         print(f"에러 발생: {str(e)}")
     finally:
         print("브라우저를 종료합니다...")
-        driver.quit()
+        if driver:
+            driver.quit()
 
 if __name__ == "__main__":
     test_login_and_download()

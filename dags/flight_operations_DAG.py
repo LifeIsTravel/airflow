@@ -1,3 +1,13 @@
+import os
+import io
+import glob
+import time
+from datetime import datetime, timedelta
+
+import pandas as pd
+import pyarrow
+import pyarrow.parquet as pq
+
 from airflow import DAG
 from airflow.models import Variable
 from airflow.operators.python import PythonOperator
@@ -5,23 +15,21 @@ from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 from airflow.providers.amazon.aws.sensors.glue import GlueJobSensor
 
-from datetime import datetime, timedelta
 import pendulum
+
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import chromedriver_autoinstaller
-import time
-import os
-import glob
-import pandas as pd
 
 # 한국 시간 설정
 KST = pendulum.timezone("Asia/Seoul")
 # S3 버킷 이름
 BUCKET_NAME = 'team5-s3'
+# 웹페이지에서 다운로드 받은 파일이 저장되는 경로
+DOWNLOAD_PATH = os.path.join(os.path.expanduser('~'), 'Downloads')
 
 # DAG 기본 설정
 default_args = {
@@ -100,6 +108,7 @@ def select_radio_button(driver, wait, button_type):
     """출발/도착 라디오 버튼 선택"""
     try:
         time.sleep(2)
+        # D는 출발, A는 도착착
         value = "D" if button_type == "출발" else "A"
         radio_buttons = driver.find_elements(By.CSS_SELECTOR, "div.iradio_square-green")
         
@@ -142,13 +151,12 @@ def input_date_with_retry(driver, input_element, date_value):
     print(f"날짜 입력 최종 실패: 목표 날짜 {date_value}, 현재 값 {current_value}")
     return False
 
-def download_daily_data(target_date, data_type, download_path):
+def download_daily_data(target_date, data_type, download_path=DOWNLOAD_PATH):
     """일일 데이터 다운로드"""
     driver = None
     try:
         # 다운로드 경로 설정 (airflow 사용자의 Downloads 디렉토리)
         # 이미 디렉토리가 있다면 생성하지 않고 없다면 새로 생성
-        download_path = os.path.join(os.path.expanduser('~'), 'Downloads')
         os.makedirs(download_path, exist_ok=True)
         
         driver = setup_chrome_driver()
@@ -183,12 +191,13 @@ def download_daily_data(target_date, data_type, download_path):
             EC.presence_of_element_located((By.NAME, "df_userid"))
         )
         password_input = driver.find_element(By.NAME, "df_passwd")
-        
+        # ID, PW 입력
         username_input.send_keys(username)
         password_input.send_keys(password)
 
         
         print("5. 로그인 시도...")
+        # 로그인 버튼 클릭
         login_submit = driver.find_element(By.CSS_SELECTOR, "input[type='image'][src='img/btn_login1.jpg']")
         login_submit.click()
         
@@ -264,7 +273,7 @@ def download_daily_data(target_date, data_type, download_path):
         driver.execute_script("arguments[0].click();", download_button)
         
         print("다운로드 진행 중...")
-        time.sleep(60)
+        time.sleep(30)
         
         print(f"{target_date.strftime('%Y-%m-%d')} {data_type} 데이터 다운로드 완료")
         
@@ -288,27 +297,37 @@ def download_daily_data(target_date, data_type, download_path):
         if driver:
             driver.quit()
 
-def save_to_s3(**context):
+def convert_parquet_save_to_s3(**context):
     """S3 업로드 함수"""
     s3_hook = S3Hook(aws_conn_id='aws_default')
-    
-    download_path = os.path.join(os.path.expanduser('~'), 'Downloads')
-    
+        
     try:
-        files = glob.glob(os.path.join(download_path, '*.xlsx'))
+        files = glob.glob(os.path.join(DOWNLOAD_PATH, '*.xlsx'))
         print(f"발견된 파일들: {files}")
 
         if not files:
             raise FileNotFoundError("처리할 파일을 찾을 수 없습니다")
         
         for file_path in files:
-            file_name = os.path.basename(file_path)
+            # 파일 읽기
+            df = pd.read_excel(file_path)
+            # 원본 파일명만 가져오기 (확장자 제외)
+            file_name = os.path.basename(file_path).split('.')[0]
             # S3 키 생성
-            s3_key = f'raw_data/flight_operations/{file_name}'
+            s3_key = f'raw_data/flight_operations/{file_name}.parquet'
+
+            # Dataframe -> pyarrow 테이블로 변환
+            print("parquet 형식으로 변환 중...")
+            table = pyarrow.Table.from_pandas(df)
+            # 메모리 버퍼에 Parquet 형식으로 쓰기
+            buffer = io.BytesIO()
+            pq.write_table(table, buffer)
+            buffer.seek(0)
+
             
-            # S3에 업로드
-            s3_hook.load_file(
-                filename=file_path,
+            # 메모리에서 직접 S3에 업로드
+            s3_hook.load_bytes(
+                bytes_data=buffer.getvalue(),
                 key=s3_key,
                 bucket_name=BUCKET_NAME,
                 replace=True
@@ -317,25 +336,14 @@ def save_to_s3(**context):
             
             # 로컬 파일 삭제
             os.remove(file_path)
-        print("Downloads 디렉토리의 모든 Excel 파일 처리 완료료")
+        print("Downloads 디렉토리의 모든 Excel 파일 처리 완료")
             
     except Exception as e:
         print(f"파일 처리 중 에러: {str(e)}")
         raise
 
-def get_glue_job_args(**context):
-    """Glue Job에 전달할 인자 생성"""
-    target_date = get_target_date(**context)
-
-    return {
-        '--JOB_NAME': 'team5-glue-flight_operations',
-        '--target_date': target_date.strftime('%Y%m%d'),
-        '--source_bucket': 'team5-s3',
-        '--source_prefix': 'raw_data/flight_operations'
-    }
-
 with DAG(
-    'flight_operations_data_collection',
+    'flight_operations_data_collection_v2',
     default_args=default_args,
     description='매일 전날의 항공운항 데이터 수집',
     schedule_interval='0 4 * * *', # UCT 4시 = KST 13시
@@ -344,10 +352,9 @@ with DAG(
 ) as dag:
     def download_task_function(**context):
         target_date = get_target_date(**context)
-        download_path = os.path.join(os.path.expanduser('~'), 'Downloads')  # EC2 환경의 경로
         
         for data_type in ["출발", "도착"]:
-            download_daily_data(target_date, data_type, download_path)
+            download_daily_data(target_date, data_type, data_path=DOWNLOAD_PATH)
     
     download_task = PythonOperator(
         task_id='download_daily_data',
@@ -357,7 +364,7 @@ with DAG(
     
     upload_to_s3_task = PythonOperator(
         task_id='upload_to_s3',
-        python_callable=save_to_s3,
+        python_callable=convert_parquet_save_to_s3,
         provide_context=True,
     )
     
