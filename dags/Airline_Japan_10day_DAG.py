@@ -251,7 +251,7 @@ def extract(execution_time):
 
 def create_airport_task(airport_code, airport_name):
     @task(task_id=f"process_{airport_code}")
-    def process_airport(dates, execution_datetime):
+    def process_airport(execution_time):
         async def airport_main():
             # 새로운 ThreadPoolExecutor 생성 및 설정
             # await asyncio.to_thread() 쓸 때 필요한 부분 (max_workers 늘리기)
@@ -261,16 +261,20 @@ def create_airport_task(airport_code, airport_name):
 
             semaphore = asyncio.Semaphore(50)  # 동시 실행 제한 (최대 50개)
 
-            async def limited_fetch(date, origin, target):
+            async def limited_fetch(date, origin, target, execution_datetime):
                 async with semaphore:
                     await fetch_flight_data(date, origin, target, execution_datetime)
 
-            tasks = []
+            execution_datetime = trans_to_kst(execution_time)
 
+            # 날짜 계산 range(n) -> 앞으로 n일 계산
+            dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(10)]
+
+            tasks = []
             for date in dates:
                 # ICN -> Target 및 Target -> ICN 항공편 모두 추가
-                tasks.append(limited_fetch(date, "ICN", airport_code))
-                tasks.append(limited_fetch(date, airport_code, "ICN"))
+                tasks.append(limited_fetch(date, "ICN", airport_code, execution_datetime))
+                tasks.append(limited_fetch(date, airport_code, "ICN", execution_datetime))
 
             # 모든 비동기 작업 실행
             await asyncio.gather(*tasks)
