@@ -58,8 +58,8 @@ def upload_json_to_s3(json_data, s3_bucket, s3_key):
         logging.error(f"S3에 JSON 파일 업로드 실패: {e}")
 
 
-# Apify에서 비행기 데이터를 비동기적으로 가져오는 함수
-async def fetch_flight_data_api(run_input, date, origin, target):
+# Apify에서 비행기 데이터를 동기적으로 가져오는 함수
+def fetch_flight_data_api(run_input, date, origin, target):
     logging.info(f"{origin} -> {target}의 {date} Apify Actor 실행 중...")
     # Actor를 실행하고 완료될 때까지 기다림
     run = client.actor("jupri/skyscanner-flight").call(run_input=run_input)
@@ -109,7 +109,7 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
     # results = await asyncio.to_thread(
     #     fetch_flight_data_api, run_input, date, origin, target
     # )
-    results = await fetch_flight_data_api(run_input, date, origin, target)  # 직접 비동기로 호출
+    results = fetch_flight_data_api(run_input, date, origin, target)  # 직접 호출
 
     # 결과가 있으면 JSON으로 저장
     if results:
