@@ -320,8 +320,8 @@ def create_airport_task(airport_code, airport_name):
                 # ICN -> Target 및 Target -> ICN 항공편 모두 추가
                 # tasks.append(limited_fetch(date, "ICN", airport_code, execution_datetime))
                 # tasks.append(limited_fetch(date, airport_code, "ICN", execution_datetime))
-                tasks.append(fetch_flight_data(date, "ICN", airport_code, execution_datetime))
-                tasks.append(fetch_flight_data(date, airport_code, "ICN", execution_datetime))
+                tasks.append(asyncio.create_task(fetch_flight_data(date, "ICN", airport_code, execution_datetime)))
+                tasks.append(asyncio.create_task(fetch_flight_data(date, airport_code, "ICN", execution_datetime)))
 
             # 모든 비동기 작업 실행
             await asyncio.gather(*tasks)
