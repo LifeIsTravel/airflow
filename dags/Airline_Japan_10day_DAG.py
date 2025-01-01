@@ -304,11 +304,11 @@ def create_airport_task(airport_code, airport_name):
             # thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=20)
             # loop.set_default_executor(thread_pool)
 
-            semaphore = asyncio.Semaphore(50)  # 동시 실행 제한 (최대 50개)
-
-            async def limited_fetch(date, origin, target, execution_datetime):
-                async with semaphore:
-                    await fetch_flight_data(date, origin, target, execution_datetime)
+            # semaphore = asyncio.Semaphore(50)  # 동시 실행 제한 (최대 50개)
+            #
+            # async def limited_fetch(date, origin, target, execution_datetime):
+            #     async with semaphore:
+            #         await fetch_flight_data(date, origin, target, execution_datetime)
 
             execution_datetime = trans_to_kst(execution_time)
 
@@ -318,8 +318,10 @@ def create_airport_task(airport_code, airport_name):
             tasks = []
             for date in dates:
                 # ICN -> Target 및 Target -> ICN 항공편 모두 추가
-                tasks.append(limited_fetch(date, "ICN", airport_code, execution_datetime))
-                tasks.append(limited_fetch(date, airport_code, "ICN", execution_datetime))
+                # tasks.append(limited_fetch(date, "ICN", airport_code, execution_datetime))
+                # tasks.append(limited_fetch(date, airport_code, "ICN", execution_datetime))
+                tasks.append(fetch_flight_data(date, "ICN", airport_code, execution_datetime))
+                tasks.append(fetch_flight_data(date, airport_code, "ICN", execution_datetime))
 
             # 모든 비동기 작업 실행
             await asyncio.gather(*tasks)
