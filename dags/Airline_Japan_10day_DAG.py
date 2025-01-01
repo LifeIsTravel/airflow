@@ -59,10 +59,10 @@ def upload_json_to_s3(json_data, s3_bucket, s3_key):
 
 
 # Apify에서 비행기 데이터를 동기적으로 가져오는 함수
-async def fetch_flight_data_api(run_input, date, origin, target):
+def fetch_flight_data_api(run_input, date, origin, target):
     logging.info(f"{origin} -> {target}의 {date} Apify Actor 실행 중...")
     # Actor를 실행하고 완료될 때까지 기다림
-    run = await client.actor("jupri/skyscanner-flight").call(run_input=run_input)
+    run = client.actor("jupri/skyscanner-flight").call(run_input=run_input)
 
     # Actor의 결과 가져오기
     results = []
@@ -106,21 +106,21 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
     }
 
     # # 비동기 스레드에서 동기 API 호출 실행
-    # results = await asyncio.to_thread(
-    #     fetch_flight_data_api, run_input, date, origin, target
-    # )
+    results = await asyncio.to_thread(
+        fetch_flight_data_api, run_input, date, origin, target
+    )
     # results = await fetch_flight_data_api(run_input, date, origin, target)  # 직접 호출
 
-    logging.info(f"{origin} -> {target}의 {date} Apify Actor 실행 중...")
-    # Actor를 실행하고 완료될 때까지 기다림
-    run = await client.actor("jupri/skyscanner-flight").call(run_input=run_input)
-
-    # Actor의 결과 가져오기
-    results = []
-    for item in client.dataset(run["defaultDatasetId"]).iterate_items():
-        results.append(item)
-
-    logging.info(f"{origin} -> {target}의 {date} Apify Actor 결과 가져오기 완료.")
+    # logging.info(f"{origin} -> {target}의 {date} Apify Actor 실행 중...")
+    # # Actor를 실행하고 완료될 때까지 기다림
+    # run = await client.actor("jupri/skyscanner-flight").call(run_input=run_input)
+    #
+    # # Actor의 결과 가져오기
+    # results = []
+    # for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+    #     results.append(item)
+    #
+    # logging.info(f"{origin} -> {target}의 {date} Apify Actor 결과 가져오기 완료.")
 
     # 결과가 있으면 JSON으로 저장
     if results:
@@ -320,8 +320,8 @@ def create_airport_task(airport_code, airport_name):
                 # ICN -> Target 및 Target -> ICN 항공편 모두 추가
                 # tasks.append(limited_fetch(date, "ICN", airport_code, execution_datetime))
                 # tasks.append(limited_fetch(date, airport_code, "ICN", execution_datetime))
-                tasks.append(asyncio.create_task(fetch_flight_data(date, "ICN", airport_code, execution_datetime)))
-                tasks.append(asyncio.create_task(fetch_flight_data(date, airport_code, "ICN", execution_datetime)))
+                tasks.append(fetch_flight_data(date, "ICN", airport_code, execution_datetime))
+                tasks.append(fetch_flight_data(date, airport_code, "ICN", execution_datetime))
 
             # 모든 비동기 작업 실행
             await asyncio.gather(*tasks)
