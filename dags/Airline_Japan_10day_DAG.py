@@ -59,14 +59,14 @@ def upload_json_to_s3(json_data, s3_bucket, s3_key):
 
 
 # Apify에서 비행기 데이터를 동기적으로 가져오는 함수
-def fetch_flight_data_api(run_input, date, origin, target):
+async def fetch_flight_data_api(run_input, date, origin, target):
     logging.info(f"{origin} -> {target}의 {date} Apify Actor 실행 중...")
     # Actor를 실행하고 완료될 때까지 기다림
-    run = client.actor("jupri/skyscanner-flight").call(run_input=run_input)
+    run = await client.actor("jupri/skyscanner-flight").call(run_input=run_input)
 
     # Actor의 결과 가져오기
     results = []
-    for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+    async for item in client.dataset(run["defaultDatasetId"]).iterate_items():
         results.append(item)
 
     logging.info(f"{origin} -> {target}의 {date} Apify Actor 결과 가져오기 완료.")
@@ -105,11 +105,11 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
         "adults": 1,
     }
 
-    # # 비동기 스레드에서 동기 API 호출 실행
-    results = await asyncio.to_thread(
-        fetch_flight_data_api, run_input, date, origin, target
-    )
-    # results = await fetch_flight_data_api(run_input, date, origin, target)  # 직접 호출
+    # 비동기 스레드에서 동기 API 호출 실행
+    # results = await asyncio.to_thread(
+    #     fetch_flight_data_api, run_input, date, origin, target
+    # )
+    results = await fetch_flight_data_api(run_input, date, origin, target)  # 직접 호출
 
     # logging.info(f"{origin} -> {target}의 {date} Apify Actor 실행 중...")
     # # Actor를 실행하고 완료될 때까지 기다림
