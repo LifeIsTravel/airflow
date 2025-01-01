@@ -113,7 +113,7 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
 
     logging.info(f"{origin} -> {target}의 {date} Apify Actor 실행 중...")
     # Actor를 실행하고 완료될 때까지 기다림
-    run = client.actor("jupri/skyscanner-flight").call(run_input=run_input)
+    run = await client.actor("jupri/skyscanner-flight").call(run_input=run_input)
 
     # Actor의 결과 가져오기
     results = []
