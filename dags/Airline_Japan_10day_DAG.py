@@ -10,6 +10,7 @@ from airflow.models import Variable
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from airflow.utils.task_group import TaskGroup
 from apify_client import ApifyClient
 
 # 로깅설정
@@ -57,8 +58,8 @@ def upload_json_to_s3(json_data, s3_bucket, s3_key):
         logging.error(f"S3에 JSON 파일 업로드 실패: {e}")
 
 
-# Apify에서 비행기 데이터를 동기적으로 가져오는 함수
-def fetch_flight_data_sync(run_input, date, origin, target):
+# Apify에서 비행기 데이터를 비동기적으로 가져오는 함수
+async def fetch_flight_data_api(run_input, date, origin, target):
     logging.info(f"{origin} -> {target}의 {date} Apify Actor 실행 중...")
     # Actor를 실행하고 완료될 때까지 기다림
     run = client.actor("jupri/skyscanner-flight").call(run_input=run_input)
@@ -104,10 +105,11 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
         "adults": 1,
     }
 
-    # 비동기 스레드에서 동기 API 호출 실행
-    results = await asyncio.to_thread(
-        fetch_flight_data_sync, run_input, date, origin, target
-    )
+    # # 비동기 스레드에서 동기 API 호출 실행
+    # results = await asyncio.to_thread(
+    #     fetch_flight_data_api, run_input, date, origin, target
+    # )
+    results = await fetch_flight_data_api(run_input, date, origin, target)  # 직접 비동기로 호출
 
     # 결과가 있으면 JSON으로 저장
     if results:
@@ -247,6 +249,39 @@ def extract(execution_time):
     return "extract 완료!"
 
 
+def create_airport_task(airport_code, airport_name):
+    @task(task_id=f"process_{airport_code}")
+    def process_airport(dates, execution_datetime):
+        async def airport_main():
+            # 새로운 ThreadPoolExecutor 생성 및 설정
+            # await asyncio.to_thread() 쓸 때 필요한 부분 (max_workers 늘리기)
+            # loop = asyncio.get_event_loop()
+            # thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=20)
+            # loop.set_default_executor(thread_pool)
+
+            semaphore = asyncio.Semaphore(50)  # 동시 실행 제한 (최대 50개)
+
+            async def limited_fetch(date, origin, target):
+                async with semaphore:
+                    await fetch_flight_data(date, origin, target, execution_datetime)
+
+            tasks = []
+
+            for date in dates:
+                # ICN -> Target 및 Target -> ICN 항공편 모두 추가
+                tasks.append(limited_fetch(date, "ICN", airport_code))
+                tasks.append(limited_fetch(date, airport_code, "ICN"))
+
+            # 모든 비동기 작업 실행
+            await asyncio.gather(*tasks)
+
+        asyncio.run(airport_main())
+        logging.info(f"{airport_name} ({airport_code}) 처리 완료")
+        return f"{airport_name} ({airport_code}) 처리 완료"
+
+    return process_airport
+
+
 @task
 def transform(execution_time, extract_data):
     logging.info(f"{extract_data} Transform 태스크 시작... (실행 시간: {execution_time})")
@@ -338,6 +373,12 @@ with DAG(
         catchup=False,
 ) as dag:
     execution_time = '{{ ts }}'  # Airflow에서 제공하는 execution_time 템플릿 변수로 사용
-    extract_data = extract(execution_time)  # extract 태스크 실행
-    transform_data = transform(execution_time, extract_data)  # transform 태스크 실행
+
+    with TaskGroup(group_id="extract") as airport_group:
+        task_results = []
+        for airport_code, airport_name in airports.items():
+            task_results.append(create_airport_task(airport_code, airport_name)(execution_time))
+
+    # extract_data = extract(execution_time)  # extract 태스크 실행
+    transform_data = transform(execution_time, task_results)  # transform 태스크 실행
     load(execution_time, transform_data)
