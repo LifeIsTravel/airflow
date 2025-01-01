@@ -109,7 +109,18 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
     # results = await asyncio.to_thread(
     #     fetch_flight_data_api, run_input, date, origin, target
     # )
-    results = await fetch_flight_data_api(run_input, date, origin, target)  # 직접 호출
+    # results = await fetch_flight_data_api(run_input, date, origin, target)  # 직접 호출
+
+    logging.info(f"{origin} -> {target}의 {date} Apify Actor 실행 중...")
+    # Actor를 실행하고 완료될 때까지 기다림
+    run = client.actor("jupri/skyscanner-flight").call(run_input=run_input)
+
+    # Actor의 결과 가져오기
+    results = []
+    for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+        results.append(item)
+
+    logging.info(f"{origin} -> {target}의 {date} Apify Actor 결과 가져오기 완료.")
 
     # 결과가 있으면 JSON으로 저장
     if results:
@@ -117,14 +128,48 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
         # S3에 JSON 데이터 업로드
         s3_bucket = "team5-s3"  # S3 버킷 이름
         s3_key = f"raw_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}.json"  # S3 객체 키
-        upload_json_to_s3(results, s3_bucket, s3_key)
+        # upload_json_to_s3(results, s3_bucket, s3_key)
+        # S3Hook을 사용하여 S3와 연결
+        s3_hook = S3Hook(aws_conn_id='aws_default')  # aws_default 연결 아이디
+
+        try:
+            # JSON 데이터를 문자열로 변환
+            json_string = json.dumps(results, ensure_ascii=False, indent=4)
+
+            # S3에 문자열 업로드
+            s3_hook.load_string(
+                string_data=json_string,
+                bucket_name=s3_bucket,
+                key=s3_key,
+                replace=True  # 이미 존재하는 파일을 덮어쓸지 여부
+            )
+            logging.info(f"JSON 파일이 S3 버킷 {s3_bucket}에 {s3_key}로 업로드되었습니다.")
+        except Exception as e:
+            logging.error(f"S3에 JSON 파일 업로드 실패: {e}")
 
     else:
         # 빈 JSON 리스트 업로드
         logging.warning(f"{origin} -> {target}의 {date} 비행기 데이터가 없으므로 빈 JSON 파일을 S3에 업로드합니다.")
         s3_bucket = "team5-s3"  # S3 버킷 이름
         s3_key = f"raw_data/flights/{year_str}/{month_str}/{day_str}/{time_str}/{date}_{origin}_to_{target}_empty.json"
-        upload_json_to_s3([], s3_bucket, s3_key)
+        # upload_json_to_s3([], s3_bucket, s3_key)
+        # S3Hook을 사용하여 S3와 연결
+        s3_hook = S3Hook(aws_conn_id='aws_default')  # aws_default 연결 아이디
+
+        try:
+            # JSON 데이터를 문자열로 변환
+            json_string = json.dumps([], ensure_ascii=False, indent=4)
+
+            # S3에 문자열 업로드
+            s3_hook.load_string(
+                string_data=json_string,
+                bucket_name=s3_bucket,
+                key=s3_key,
+                replace=True  # 이미 존재하는 파일을 덮어쓸지 여부
+            )
+            logging.info(f"JSON 파일이 S3 버킷 {s3_bucket}에 {s3_key}로 업로드되었습니다.")
+        except Exception as e:
+            logging.error(f"S3에 JSON 파일 업로드 실패: {e}")
 
 
 def trans_to_kst(execution_time):
