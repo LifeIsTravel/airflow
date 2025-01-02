@@ -11,7 +11,7 @@ from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.utils.task_group import TaskGroup
-from apify_client import ApifyClient
+from apify_client.client import ApifyClientAsync
 
 # 로깅설정
 logging.basicConfig(
@@ -19,7 +19,7 @@ logging.basicConfig(
 )
 api_key = Variable.get("flight_api2_secret")
 # ApifyClient 초기화
-client = ApifyClient(api_key)
+client = ApifyClientAsync(api_key)
 
 # 목적지 공항 코드 정의
 airports = {
