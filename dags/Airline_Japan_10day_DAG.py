@@ -21,7 +21,7 @@ api_key = Variable.get("flight_api2_secret")
 # ApifyClient 초기화
 client = ApifyClientAsync(api_key)
 
-semaphore = asyncio.Semaphore(6)  # 동시에 실행되는 비동기 작업을 3개로 제한
+semaphore = asyncio.Semaphore(6)  # 동시에 실행되는 비동기 작업을 6개로 제한
 
 # 목적지 공항 코드 정의
 airports = {
@@ -114,7 +114,7 @@ async def fetch_flight_data(date, origin, target, execution_datetime):
 
         # Actor의 결과 가져오기
         results = []
-        for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+        async for item in client.dataset(run["defaultDatasetId"]).iterate_items():
             results.append(item)
 
         logging.info(f"{origin} -> {target}의 {date} Apify Actor 결과 가져오기 완료.")
