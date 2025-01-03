@@ -47,8 +47,15 @@ default_args = {
 
 def get_target_date(**context):
     """실행 날짜로부터 대상 날짜 계산"""
-    execution_date = context['execution_date']
-    return execution_date.in_timezone(KST) - timedelta(days=1)
+    # execution_date를 한국 시간대로 변환
+    execution_date = context['execution_date'].in_timezone(KST)
+    # 하루 전 날짜를 반환
+    target_date = execution_date - timedelta(days=1)
+    
+    logger.info(f"Execution date (KST): {execution_date}")
+    logger.info(f"Target date for data collection: {target_date}")
+    
+    return target_date
 
 # 앞에 Chrome이랑 Chrome Driver를 EC2에 설치해야함.
 def setup_chrome_driver():
@@ -428,15 +435,19 @@ with DAG(
     tags=['flight_operations'],
     catchup=False, # False로 변경
 ) as dag:
-    target_date = get_target_date(**{"execution_date": "{{ execution_date }}"})
-    date_str = target_date.strftime('%Y%m%d')  # YYYYMMDD 형식으로 변환
+    # PythonOperator로 target_date 계산
+    get_date = PythonOperator(
+        task_id='get_target_date',
+        python_callable=get_target_date,
+        provide_context=True
+    )
 
-    # 출발/도착 데이터 다운로드 태스크 
+    # 다운로드 태스크들에서 target_date를 XCom으로 받아서 사용
     download_departure = PythonOperator(
         task_id='download_departure',
         python_callable=download_daily_data,
         op_kwargs={
-            'target_date': target_date,
+            'target_date': "{{ task_instance.xcom_pull(task_ids='get_target_date') }}",
             'data_type': "출발",
             'download_path': DOWNLOAD_PATH
         }
@@ -446,47 +457,28 @@ with DAG(
         task_id='download_arrival', 
         python_callable=download_daily_data,
         op_kwargs={
-            'target_date': target_date,
+            'target_date': "{{ task_instance.xcom_pull(task_ids='get_target_date') }}",
             'data_type': "도착",
             'download_path': DOWNLOAD_PATH
         }
     )
-    
-    # S3 업로드 태스크
-    upload_to_s3 = PythonOperator(
-        task_id='upload_to_s3',
-        python_callable=convert_parquet_save_to_s3,
-        provide_context=True
-    )
-    
+
     # Glue 변환 태스크
     glue_job = GlueJobOperator(
         task_id='transform_data',
         job_name='team5-glue-flight_operation_japan_daily',
         region_name='ap-northeast-2',
         script_args={
-            '--target_date': date_str,
+            '--target_date': "{{ task_instance.xcom_pull(task_ids='get_target_date').strftime('%Y%m%d') }}",
         },
         aws_conn_id='aws_default',
     )
     
-    # Glue Job 완료 대기
-    glue_sensor = GlueJobSensor(
-        task_id='wait_for_glue_job',
-        job_name="{{ task_instance.xcom_pull(key='job_name', task_ids='transform_data') }}",  # 실행된 Job의 이름
-        run_id="{{ task_instance.xcom_pull(key='JOB_RUN_ID', task_ids='transform_data') }}",  # 실행된 Job의 ID
-        aws_conn_id='aws_default',
-        poke_interval=60,  # 1분마다 상태 체크
-        timeout=3600      # 1시간 타임아웃
-    )
     # Snowflake 적재 태스크
     snowflake_task = PythonOperator(
         task_id='load_to_snowflake',
         python_callable=snowflake_load,
         op_kwargs={
-            'target_date': target_date,
+            'target_date': "{{ task_instance.xcom_pull(task_ids='get_target_date') }}",
         }
     )
-
-    # 태스크 의존성 설정
-    [download_departure, download_arrival] >> upload_to_s3 >> glue_job >> glue_sensor >> snowflake_task
