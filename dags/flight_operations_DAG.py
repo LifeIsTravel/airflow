@@ -437,14 +437,14 @@ with DAG(
     catchup=False, # False로 변경
 ) as dag:
 
-    target_date_task = get_target_date()
+    #target_date_task = get_target_date()
 
     # 출발/도착 데이터 다운로드 태스크 
     download_departure = PythonOperator(
         task_id='download_departure',
         python_callable=download_daily_data,
         op_kwargs={
-            'target_date': '{{ task_instance.xcom_pull(task_ids="get_target_date") }}',
+            'target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}',
             'data_type': "출발",
             'download_path': DOWNLOAD_PATH
         }
@@ -454,7 +454,7 @@ with DAG(
         task_id='download_arrival', 
         python_callable=download_daily_data,
         op_kwargs={
-            'target_date': '{{ task_instance.xcom_pull(task_ids="get_target_date") }}',
+            'target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}',
             'data_type': "도착",
             'download_path': DOWNLOAD_PATH
         }
@@ -472,7 +472,7 @@ with DAG(
         job_name='team5-glue-flight_operation_japan_daily',
         region_name='ap-northeast-2',
         script_args={
-            '--target_date': '{{ task_instance.xcom_pull(task_ids="get_target_date") }}',
+            '--target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}',
         },
         aws_conn_id='aws_default',
     )
@@ -482,9 +482,9 @@ with DAG(
         task_id='load_to_snowflake',
         python_callable=snowflake_load,
         op_kwargs={
-            'target_date': '{{ task_instance.xcom_pull(task_ids="get_target_date") }}'
+            'target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}'
         }
     )
 
     # 태스크 의존성 설정
-    target_date_task >> [download_departure, download_arrival] >> upload_to_s3 >> glue_job >> snowflake_task
+    [download_departure, download_arrival] >> upload_to_s3 >> glue_job >> snowflake_task
