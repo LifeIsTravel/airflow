@@ -164,7 +164,7 @@ def input_date_with_retry(driver, input_element, date_value):
     return False
 
 
-def download_daily_data(target_date, download_path=DOWNLOAD_PATH):
+def download_daily_data(target_date, data_type, download_path=DOWNLOAD_PATH):
     """일일 데이터 다운로드"""
     driver = None
     try:
@@ -176,134 +176,134 @@ def download_daily_data(target_date, download_path=DOWNLOAD_PATH):
         wait = WebDriverWait(driver, 120)
         logger.info(f"Target date for data collection: {target_date}")
 
-        for data_type in ["출발", "도착"]:
-            logger.info(f"네트워크 상태 확인: {data_type} 데이터 다운로드 시작")
-            logger.info("1. 메인 페이지 접속 중...")
-            driver.get("https://www.airportal.go.kr/life/airinfo/RbHanFrmMain.jsp")
-            
-            # 현재 페이지 URL 확인
-            current_url = driver.current_url
-            print(f"현재 페이지 URL: {current_url}")
+        
+        logger.info(f"네트워크 상태 확인: {data_type} 데이터 다운로드 시작")
+        logger.info("1. 메인 페이지 접속 중...")
+        driver.get("https://www.airportal.go.kr/life/airinfo/RbHanFrmMain.jsp")
+        
+        # 현재 페이지 URL 확인
+        current_url = driver.current_url
+        print(f"현재 페이지 URL: {current_url}")
 
-            print("2. 로그인 버튼 클릭...")
-            login_button = wait.until(
-                EC.element_to_be_clickable((By.XPATH, "//a[text()='로그인']"))
-            )
-            login_button.click()
-            
-            print("3. 팝업창으로 전환 중...")
-            wait.until(lambda d: len(d.window_handles) > 1)
-            main_window = driver.current_window_handle
-            popup_window = [handle for handle in driver.window_handles if handle != main_window][0]
-            driver.switch_to.window(popup_window)
-            
-            print("4. 로그인 정보 입력 중...")
+        print("2. 로그인 버튼 클릭...")
+        login_button = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//a[text()='로그인']"))
+        )
+        login_button.click()
+        
+        print("3. 팝업창으로 전환 중...")
+        wait.until(lambda d: len(d.window_handles) > 1)
+        main_window = driver.current_window_handle
+        popup_window = [handle for handle in driver.window_handles if handle != main_window][0]
+        driver.switch_to.window(popup_window)
+        
+        print("4. 로그인 정보 입력 중...")
 
-            username = Variable.get("airportal_username")
-            password = Variable.get("airportal_password")
+        username = Variable.get("airportal_username")
+        password = Variable.get("airportal_password")
 
-            username_input = wait.until(
-                EC.presence_of_element_located((By.NAME, "df_userid"))
-            )
-            password_input = driver.find_element(By.NAME, "df_passwd")
-            # ID, PW 입력
-            username_input.send_keys(username)
-            password_input.send_keys(password)
+        username_input = wait.until(
+            EC.presence_of_element_located((By.NAME, "df_userid"))
+        )
+        password_input = driver.find_element(By.NAME, "df_passwd")
+        # ID, PW 입력
+        username_input.send_keys(username)
+        password_input.send_keys(password)
 
-            
-            print("5. 로그인 시도...")
-            # 로그인 버튼 클릭
-            login_submit = driver.find_element(By.CSS_SELECTOR, "input[type='image'][src='img/btn_login1.jpg']")
-            login_submit.click()
-            
-            print("6. 메인 창으로 복귀...")
-            driver.switch_to.window(main_window)
-            time.sleep(3)
+        
+        print("5. 로그인 시도...")
+        # 로그인 버튼 클릭
+        login_submit = driver.find_element(By.CSS_SELECTOR, "input[type='image'][src='img/btn_login1.jpg']")
+        login_submit.click()
+        
+        print("6. 메인 창으로 복귀...")
+        driver.switch_to.window(main_window)
+        time.sleep(3)
 
-            #로그인 검증
-            if not validate_login(driver):
-                raise Exception("로그인 실패")
-            
-            print("7. 데이터 다운로드 페이지로 이동 중...")
-            max_attempts = 3
-            for attempt in range(max_attempts):
-                try:
-                    # 다운로드 버튼 찾기 및 클릭
-                    download_link = wait.until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, "#excel_div > a"))
-                    ) 
-                    download_link.click()
+        #로그인 검증
+        if not validate_login(driver):
+            raise Exception("로그인 실패")
+        
+        print("7. 데이터 다운로드 페이지로 이동 중...")
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                # 다운로드 버튼 찾기 및 클릭
+                download_link = wait.until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "#excel_div > a"))
+                ) 
+                download_link.click()
 
-                    # 새 창이 열릴 때까지 대기
-                    time.sleep(5)
+                # 새 창이 열릴 때까지 대기
+                time.sleep(5)
 
-                    # 새 창으로 전환
-                    windows = driver.window_handles
-                    new_window = [window for window in windows if window != main_window][0]
-                    driver.switch_to.window(new_window)
-                    
-                    # 페이지가 실제로 로드되었는지 확인
-                    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.iradio_square-green")))
-                    time.sleep(5)  # 추가 대기 시간
-                    print("데이터 다운로드 페이지 로드 성공")
-                    break
-                except Exception as e:
-                    print(f"페이지 로드 시도 {attempt + 1}/{max_attempts} 실패: {str(e)}")
-                    if attempt == max_attempts - 1:
-                        raise Exception("데이터 다운로드 페이지 로드 실패") from e
-                    time.sleep(10)  # 재시도 전 대기
-            
-            if not select_radio_button(driver, wait, data_type):
-                raise Exception(f"{data_type} 버튼 선택 실패")
-            
-            #target_date = target_date.strftime('%Y%m%d')
-            print(f"선택할 날짜: {target_date}")
-            
-            start_date_input = wait.until(EC.presence_of_element_located((By.NAME, "sDate")))
-            start_date_success = input_date_with_retry(driver, start_date_input, target_date)
-            
-            end_date_input = driver.find_element(By.NAME, "eDate")
-            end_date_success = input_date_with_retry(driver, end_date_input, target_date)
-            
-            # 날짜 입력 검증
-            if not (start_date_success and end_date_success):
-                raise Exception(f"날짜 입력 실패: {target_date}")
-            
-            # 검색 버튼 클릭 전 최종 날짜 확인 로그
-            print(f"시작 날짜 입력값: {start_date_input.get_attribute('value')}")
-            print(f"종료 날짜 입력값: {end_date_input.get_attribute('value')}")
-            time.sleep(1)
-            
-            search_button = wait.until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "a.mainSearchBtn"))
-            )
-            driver.execute_script("arguments[0].click();", search_button)
-            
-            print("검색 결과 로드 중...")
-            time.sleep(30)
-            
-            download_button = wait.until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "a.mainExcellBtn"))
-            )
-            driver.execute_script("arguments[0].click();", download_button)
-            
-            print("다운로드 진행 중...")
-            time.sleep(30)
-            
-            print(f"{target_date} {data_type} 데이터 다운로드 완료")
-            
-            # 다운로드된 파일명 변경
-            time.sleep(5)  # 파일 다운로드 완료 대기
-            file = os.listdir(download_path)
-            # 아직 이름이 변경되지 않은 파일만
-            excel_file = [f for f in file if f.startswith('항공기출도착현황')]
-            
-            if excel_file:
-                old_path = os.path.join(download_path, excel_file[0])
-                new_filename = f"flight_operations_{data_type}_{target_date}.xlsx"
-                new_path = os.path.join(download_path, new_filename)
-                os.rename(old_path, new_path)
-                print(f"파일명 변경: {file} -> {new_filename}")
+                # 새 창으로 전환
+                windows = driver.window_handles
+                new_window = [window for window in windows if window != main_window][0]
+                driver.switch_to.window(new_window)
+                
+                # 페이지가 실제로 로드되었는지 확인
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.iradio_square-green")))
+                time.sleep(5)  # 추가 대기 시간
+                print("데이터 다운로드 페이지 로드 성공")
+                break
+            except Exception as e:
+                print(f"페이지 로드 시도 {attempt + 1}/{max_attempts} 실패: {str(e)}")
+                if attempt == max_attempts - 1:
+                    raise Exception("데이터 다운로드 페이지 로드 실패") from e
+                time.sleep(10)  # 재시도 전 대기
+        
+        if not select_radio_button(driver, wait, data_type):
+            raise Exception(f"{data_type} 버튼 선택 실패")
+        
+        #target_date = target_date.strftime('%Y%m%d')
+        print(f"선택할 날짜: {target_date}")
+        
+        start_date_input = wait.until(EC.presence_of_element_located((By.NAME, "sDate")))
+        start_date_success = input_date_with_retry(driver, start_date_input, target_date)
+        
+        end_date_input = driver.find_element(By.NAME, "eDate")
+        end_date_success = input_date_with_retry(driver, end_date_input, target_date)
+        
+        # 날짜 입력 검증
+        if not (start_date_success and end_date_success):
+            raise Exception(f"날짜 입력 실패: {target_date}")
+        
+        # 검색 버튼 클릭 전 최종 날짜 확인 로그
+        print(f"시작 날짜 입력값: {start_date_input.get_attribute('value')}")
+        print(f"종료 날짜 입력값: {end_date_input.get_attribute('value')}")
+        time.sleep(1)
+        
+        search_button = wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "a.mainSearchBtn"))
+        )
+        driver.execute_script("arguments[0].click();", search_button)
+        
+        print("검색 결과 로드 중...")
+        time.sleep(30)
+        
+        download_button = wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "a.mainExcellBtn"))
+        )
+        driver.execute_script("arguments[0].click();", download_button)
+        
+        print("다운로드 진행 중...")
+        time.sleep(30)
+        
+        print(f"{target_date} {data_type} 데이터 다운로드 완료")
+        
+        # 다운로드된 파일명 변경
+        time.sleep(5)  # 파일 다운로드 완료 대기
+        file = os.listdir(download_path)
+        # 아직 이름이 변경되지 않은 파일만
+        excel_file = [f for f in file if f.startswith('항공기출도착현황')]
+        
+        if excel_file:
+            old_path = os.path.join(download_path, excel_file[0])
+            new_filename = f"flight_operations_{data_type}_{target_date}.xlsx"
+            new_path = os.path.join(download_path, new_filename)
+            os.rename(old_path, new_path)
+            print(f"파일명 변경: {file} -> {new_filename}")
         
     except Exception as e:
         logger.error(f"데이터 다운로드 중 에러: {str(e)}")
@@ -435,17 +435,18 @@ with DAG(
     tags=['flight_operations'],
     catchup=False, # False로 변경
 ) as dag:
-
-    #target_date_task = get_target_date()
+    def download_task_function(**context):
+        target_date = context['execution_date']
+        target_date = target_date.in_timezone(KST).strftime("%Y%m%d")
+        
+        for data_type in ["출발", "도착"]:
+            download_daily_data(target_date, data_type, DOWNLOAD_PATH)
 
     # 출발/도착 데이터 다운로드 태스크를 하나로 통합
     download_data = PythonOperator(
         task_id='download_flight_data',
-        python_callable=download_daily_data,
-        op_kwargs={
-            'target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}',
-            'download_path': DOWNLOAD_PATH
-        }
+        python_callable=download_task_function,
+        provide_context=True
     )
     
     upload_to_s3 = PythonOperator(
