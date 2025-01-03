@@ -40,7 +40,7 @@ DOWNLOAD_PATH = os.path.join(os.path.expanduser('~'), 'Downloads')
 default_args = {
     'owner': 'nykim',
     'depends_on_past': False, # 이전 DAG 실행 상태와 무관하게 실행
-    'start_date': datetime(2024, 12, 24, 4, 0, tzinfo=pendulum.timezone("UTC")),
+    'start_date': datetime(2024, 12, 23, 4, 0, tzinfo=pendulum.timezone("UTC")),
     'retries': 2,
     'retry_delay': timedelta(minutes=5),
 }
