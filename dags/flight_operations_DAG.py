@@ -13,7 +13,6 @@ from airflow import DAG
 from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from airflow.decorators import task
 from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 from airflow.providers.amazon.aws.sensors.glue import GlueJobSensor
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
@@ -45,7 +44,7 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
-@task
+
 def get_target_date(**context):
     """실행 날짜로부터 대상 날짜 계산"""
     # execution_date를 한국 시간대로 변환, -1 하지 않음. execution_date 자체가 하루 전 날짜
@@ -164,7 +163,7 @@ def input_date_with_retry(driver, input_element, date_value):
     print(f"날짜 입력 최종 실패: 목표 날짜 {date_value}, 현재 값 {current_value}")
     return False
 
-@task
+
 def download_daily_data(target_date, data_type, download_path=DOWNLOAD_PATH):
     """일일 데이터 다운로드"""
     driver = None
@@ -311,7 +310,6 @@ def download_daily_data(target_date, data_type, download_path=DOWNLOAD_PATH):
         if driver:
             driver.quit()
 
-@task
 def convert_parquet_save_to_s3(**context):
     """S3 업로드 함수"""
     s3_hook = S3Hook(aws_conn_id='aws_default')
@@ -416,7 +414,6 @@ def read_parquet_files_from_s3(bucket_name, prefix):
     # 필터링된 .parquet 파일 목록 반환
     return parquet_files
 
-@task
 def snowflake_load(target_date):
     folder_path = f"transform_data/flight_operations/{target_date}/"
 
