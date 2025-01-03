@@ -457,13 +457,12 @@ with DAG(
     # Glue 변환 태스크
     glue_job = GlueJobOperator(
         task_id='transform_data',
-        job_name='team5-glue-flight_operation_japan_daily',
+        job_name='team5-glue-flight_operations_japan_daily',
         region_name='ap-northeast-2',
         script_args={
             '--target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}',
         },
-        aws_conn_id='aws_default',
-        role_arn='arn:aws:iam::862327261051:role/Team5-glue-role' 
+        aws_conn_id='aws_default'
     )
     
     # Snowflake 적재 태스크
