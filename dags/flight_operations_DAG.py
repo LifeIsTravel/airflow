@@ -174,7 +174,7 @@ def download_daily_data(target_date, data_type, download_path=DOWNLOAD_PATH):
         
         driver = setup_chrome_driver()
         wait = WebDriverWait(driver, 120)
-        
+        logger.info(f"Target date for data collection: {target_date}")
         logger.info(f"네트워크 상태 확인: {data_type} 데이터 다운로드 시작")
         logger.info("1. 메인 페이지 접속 중...")
         driver.get("https://www.airportal.go.kr/life/airinfo/RbHanFrmMain.jsp")
@@ -254,18 +254,18 @@ def download_daily_data(target_date, data_type, download_path=DOWNLOAD_PATH):
         if not select_radio_button(driver, wait, data_type):
             raise Exception(f"{data_type} 버튼 선택 실패")
         
-        date_str = target_date.strftime('%Y%m%d')
-        print(f"선택할 날짜: {date_str}")
+        #target_date = target_date.strftime('%Y%m%d')
+        print(f"선택할 날짜: {target_date}")
         
         start_date_input = wait.until(EC.presence_of_element_located((By.NAME, "sDate")))
-        start_date_success = input_date_with_retry(driver, start_date_input, date_str)
+        start_date_success = input_date_with_retry(driver, start_date_input, target_date)
         
         end_date_input = driver.find_element(By.NAME, "eDate")
-        end_date_success = input_date_with_retry(driver, end_date_input, date_str)
+        end_date_success = input_date_with_retry(driver, end_date_input, target_date)
         
         # 날짜 입력 검증
         if not (start_date_success and end_date_success):
-            raise Exception(f"날짜 입력 실패: {date_str}")
+            raise Exception(f"날짜 입력 실패: {target_date}")
         
         # 검색 버튼 클릭 전 최종 날짜 확인 로그
         print(f"시작 날짜 입력값: {start_date_input.get_attribute('value')}")
@@ -441,7 +441,7 @@ with DAG(
         task_id='download_departure',
         python_callable=download_daily_data,
         op_kwargs={
-            'target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}',
+            'target_date': '{{ execution_date.in_timezone(KST).strftime("%Y%m%d") }}',
             'data_type': "출발",
             'download_path': DOWNLOAD_PATH
         }
@@ -451,7 +451,7 @@ with DAG(
         task_id='download_arrival', 
         python_callable=download_daily_data,
         op_kwargs={
-            'target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}',
+            'target_date': '{{ execution_date.in_timezone(KST).strftime("%Y%m%d") }}',
             'data_type': "도착",
             'download_path': DOWNLOAD_PATH
         }
@@ -469,7 +469,7 @@ with DAG(
         job_name='team5-glue-flight_operation_japan_daily',
         region_name='ap-northeast-2',
         script_args={
-            '--target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}',
+            '--target_date': '{{ execution_date.in_timezone(KST).strftime("%Y%m%d") }}',
         },
         aws_conn_id='aws_default',
     )
@@ -479,7 +479,7 @@ with DAG(
         task_id='load_to_snowflake',
         python_callable=snowflake_load,
         op_kwargs={
-            'target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}'
+            'target_date': '{{ execution_date.in_timezone(KST).strftime("%Y%m%d") }}'
         }
     )
 
