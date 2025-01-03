@@ -2,6 +2,7 @@ import os
 import io
 import glob
 import time
+import logging
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -14,6 +15,7 @@ from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 from airflow.providers.amazon.aws.sensors.glue import GlueJobSensor
+from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
 import pendulum
 
@@ -24,6 +26,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import chromedriver_autoinstaller
 
+# logger 설정
+logger = logging.getLogger(__name__)
 # 한국 시간 설정
 KST = pendulum.timezone("Asia/Seoul")
 # S3 버킷 이름
@@ -76,7 +80,7 @@ def setup_chrome_driver():
         return driver
         
     except Exception as e:
-        print(f"Chrome Driver 설정 중 에러 발생: {str(e)}")
+        logger.error(f"Chrome Driver 설정 중 에러 발생: {str(e)}")
         raise
         
 def validate_login(driver):
@@ -151,6 +155,7 @@ def input_date_with_retry(driver, input_element, date_value):
     print(f"날짜 입력 최종 실패: 목표 날짜 {date_value}, 현재 값 {current_value}")
     return False
 
+@task
 def download_daily_data(target_date, data_type, download_path=DOWNLOAD_PATH):
     """일일 데이터 다운로드"""
     driver = None
@@ -162,8 +167,8 @@ def download_daily_data(target_date, data_type, download_path=DOWNLOAD_PATH):
         driver = setup_chrome_driver()
         wait = WebDriverWait(driver, 120)
         
-        print(f"네트워크 상태 확인: {data_type} 데이터 다운로드 시작")
-        print("1. 메인 페이지 접속 중...")
+        logger.info(f"네트워크 상태 확인: {data_type} 데이터 다운로드 시작")
+        logger.info("1. 메인 페이지 접속 중...")
         driver.get("https://www.airportal.go.kr/life/airinfo/RbHanFrmMain.jsp")
         
         # 현재 페이지 URL 확인
@@ -291,12 +296,13 @@ def download_daily_data(target_date, data_type, download_path=DOWNLOAD_PATH):
             print(f"파일명 변경: {file} -> {new_filename}")
         
     except Exception as e:
-        print(f"데이터 다운로드 중 에러: {str(e)}")
+        logger.error(f"데이터 다운로드 중 에러: {str(e)}")
         raise e
     finally:
         if driver:
             driver.quit()
 
+@task
 def convert_parquet_save_to_s3(**context):
     """S3 업로드 함수"""
     s3_hook = S3Hook(aws_conn_id='aws_default')
@@ -339,8 +345,79 @@ def convert_parquet_save_to_s3(**context):
         print("Downloads 디렉토리의 모든 Excel 파일 처리 완료")
             
     except Exception as e:
-        print(f"파일 처리 중 에러: {str(e)}")
+        logger.error(f"파일 처리 중 에러: {str(e)}")
         raise
+
+def bulk_copy_to_snowlake(parquet_files):
+    # Snowflake Hook 인스턴스 생성
+    snowflake_hook = SnowflakeHook(snowflake_conn_id='snowflake_conn')
+    logging.info("Snowflake hook created")
+
+    try:
+        # s3 데이터가 snowflake stage에 바로 업데이트 되지 않아서 stage를 내렸다가 다시 업로드
+        delete_query = f"""
+                DROP STAGE IF EXISTS TEAM5.raw_data.team5_stage;
+            """
+        snowflake_hook.run(delete_query)
+        logging.info("DROP STAGE Complete")
+
+        create_query = f"""
+                CREATE STAGE TEAM5.raw_data.team5_stage
+                STORAGE_INTEGRATION = TEAM5_S3_INTEGRATION
+                URL = 's3://team5-s3/transform_data/'
+            """
+        snowflake_hook.run(create_query)
+        logging.info("CREATE STAGE Complete")
+
+        files_list = "', '".join(parquet_files)  # 파일 목록을 '파일1', '파일2', ... 형태로 변환
+        copy_query = f"""
+            COPY INTO "TEAM5"."RAW_DATA"."FLIGHT_OPERATIONS"
+            FROM (
+                SELECT $1:operation_type::VARCHAR, $1:date::VARCHAR, $1:airline::VARCHAR, $1:flight_number::VARCHAR, $1:departure_airport_code::VARCHAR, $1:departure_airport_name::VARCHAR, $1:arrival_airport_code::VARIANT, $1:arrival_airport_name::VARCHAR, $1:scheduled_time::VARCHAR, $1:estimated_time::VARCHAR, $1:actual_time::VARCHAR, $1:category::VARIANT, $1:status::VARCHAR
+                FROM '@"TEAM5"."RAW_DATA"."TEAM5_STAGE"'
+            )
+            FILES = ('{files_list}')
+            FILE_FORMAT = (
+                TYPE=PARQUET,
+                REPLACE_INVALID_CHARACTERS=TRUE,
+                BINARY_AS_TEXT=FALSE
+            )
+            ON_ERROR=ABORT_STATEMENT;
+        """
+        result = snowflake_hook.run(copy_query)
+        logging.info(f"COPY INTO Complete. Loaded {len(parquet_files)} files.")
+        return result
+    except Exception as e:
+        logging.error(f"Error in bulk copy to Snowflake: {str(e)}")
+        raise
+
+
+def read_parquet_files_from_s3(bucket_name, prefix):
+    s3_hook = S3Hook(aws_conn_id="aws_default")
+
+    # S3 버킷에서 Parquet 파일 목록 가져오기
+    keys = s3_hook.list_keys(bucket_name, prefix=prefix)
+    logging.info(f"Found keys: {keys}")
+
+    # .parquet으로 끝나는 파일만 필터링
+    parquet_files = [key for key in keys if key.endswith('.parquet')]
+    # 'transform_data/'를 경로에서 제거
+    parquet_files = [key.replace('transform_data/', '') for key in parquet_files]
+
+    # 필터링된 .parquet 파일 목록 반환
+    return parquet_files
+
+@task
+def snowflake_load(target_date):
+    folder_path = f"transform_data/flight_operations/{target_date}/"
+
+    parquet_files = read_parquet_files_from_s3(BUCKET_NAME, folder_path)
+
+    if parquet_files:
+        bulk_copy_to_snowlake(parquet_files)
+        logging.info(f"Copied {len(parquet_files)} files into Snowflake.")
+    else:
+        logging.info("No parquet files found to process.")
 
 with DAG(
     'flight_operations_data_collection_v2',
@@ -350,22 +427,65 @@ with DAG(
     tags=['flight_operations'],
     catchup=False, # False로 변경
 ) as dag:
-    def download_task_function(**context):
-        target_date = get_target_date(**context)
-        
-        for data_type in ["출발", "도착"]:
-            download_daily_data(target_date, data_type, download_path=DOWNLOAD_PATH)
-    
-    download_task = PythonOperator(
-        task_id='download_daily_data',
-        python_callable=download_task_function,
-        provide_context=True,
+    target_date = get_target_date(**{"execution_date": "{{ execution_date }}"})
+    date_str = target_date.strftime('%Y%m%d')  # YYYYMMDD 형식으로 변환
+
+    # 출발/도착 데이터 다운로드 태스크 
+    download_departure = PythonOperator(
+        task_id='download_departure',
+        python_callable=download_daily_data,
+        op_kwargs={
+            'target_date': target_date,
+            'data_type': "출발",
+            'download_path': DOWNLOAD_PATH
+        }
     )
     
-    upload_to_s3_task = PythonOperator(
+    download_arrival = PythonOperator(
+        task_id='download_arrival', 
+        python_callable=download_daily_data,
+        op_kwargs={
+            'target_date': target_date,
+            'data_type': "도착",
+            'download_path': DOWNLOAD_PATH
+        }
+    )
+    
+    # S3 업로드 태스크
+    upload_to_s3 = PythonOperator(
         task_id='upload_to_s3',
         python_callable=convert_parquet_save_to_s3,
-        provide_context=True,
+        provide_context=True
     )
     
-    download_task >> upload_to_s3_task
+    # Glue 변환 태스크
+    glue_job = GlueJobOperator(
+        task_id='transform_data',
+        job_name='team5-glue-flight_operation_japan_daily',
+        region_name='ap-northeast-2',
+        script_args={
+            '--target_date': date_str,
+        },
+        aws_conn_id='aws_default',
+    )
+    
+    # Glue Job 완료 대기
+    glue_sensor = GlueJobSensor(
+        task_id='wait_for_glue_job',
+        job_name="{{ task_instance.xcom_pull(key='job_name', task_ids='transform_data') }}",  # 실행된 Job의 이름
+        run_id="{{ task_instance.xcom_pull(key='JOB_RUN_ID', task_ids='transform_data') }}",  # 실행된 Job의 ID
+        aws_conn_id='aws_default',
+        poke_interval=60,  # 1분마다 상태 체크
+        timeout=3600      # 1시간 타임아웃
+    )
+    # Snowflake 적재 태스크
+    snowflake_task = PythonOperator(
+        task_id='load_to_snowflake',
+        python_callable=snowflake_load,
+        op_kwargs={
+            'target_date': target_date,
+        }
+    )
+
+    # 태스크 의존성 설정
+    [download_departure, download_arrival] >> upload_to_s3 >> glue_job >> glue_sensor >> snowflake_task
