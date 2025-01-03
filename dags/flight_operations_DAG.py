@@ -164,7 +164,7 @@ def input_date_with_retry(driver, input_element, date_value):
     return False
 
 
-def download_daily_data(target_date, data_type, download_path=DOWNLOAD_PATH):
+def download_daily_data(target_date, download_path=DOWNLOAD_PATH):
     """일일 데이터 다운로드"""
     driver = None
     try:
