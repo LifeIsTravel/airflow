@@ -45,7 +45,7 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
-'''
+@task
 def get_target_date(**context):
     """실행 날짜로부터 대상 날짜 계산"""
     # execution_date를 한국 시간대로 변환, -1 하지 않음. execution_date 자체가 하루 전 날짜
@@ -53,13 +53,10 @@ def get_target_date(**context):
     target_date = execution_date.strftime('%Y%m%d')
     # 하루 전 날짜를 반환
     #target_date = execution_date - timedelta(days=1)
-    
     #logger.info(f"Execution date (KST): {execution_date}")
     logger.info(f"Target date for data collection: {target_date}")
     
     return target_date
-'''
-
 
 # 앞에 Chrome이랑 Chrome Driver를 EC2에 설치해야함.
 def setup_chrome_driver():
@@ -440,12 +437,14 @@ with DAG(
     catchup=False, # False로 변경
 ) as dag:
 
+    target_date_task = get_target_date()
+
     # 출발/도착 데이터 다운로드 태스크 
     download_departure = PythonOperator(
         task_id='download_departure',
         python_callable=download_daily_data,
         op_kwargs={
-            'target_date': '{{ execution_date.strftime("%Y%m%d") }}',
+            'target_date': '{{ task_instance.xcom_pull(task_ids="get_target_date") }}',
             'data_type': "출발",
             'download_path': DOWNLOAD_PATH
         }
@@ -455,7 +454,7 @@ with DAG(
         task_id='download_arrival', 
         python_callable=download_daily_data,
         op_kwargs={
-            'target_date': '{{ execution_date.strftime("%Y%m%d") }}',
+            'target_date': '{{ task_instance.xcom_pull(task_ids="get_target_date") }}',
             'data_type': "도착",
             'download_path': DOWNLOAD_PATH
         }
@@ -473,7 +472,7 @@ with DAG(
         job_name='team5-glue-flight_operation_japan_daily',
         region_name='ap-northeast-2',
         script_args={
-            '--target_date': '{{ execution_date.strftime("%Y%m%d") }}',
+            '--target_date': '{{ task_instance.xcom_pull(task_ids="get_target_date") }}',
         },
         aws_conn_id='aws_default',
     )
@@ -483,9 +482,9 @@ with DAG(
         task_id='load_to_snowflake',
         python_callable=snowflake_load,
         op_kwargs={
-            'target_date': '{{ execution_date.strftime("%Y%m%d") }}'
+            'target_date': '{{ task_instance.xcom_pull(task_ids="get_target_date") }}'
         }
     )
 
     # 태스크 의존성 설정
-    [download_departure, download_arrival] >> upload_to_s3 >> glue_job >> snowflake_task
+    target_date_task >> [download_departure, download_arrival] >> upload_to_s3 >> glue_job >> snowflake_task
