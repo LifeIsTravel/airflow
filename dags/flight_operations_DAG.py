@@ -441,7 +441,7 @@ with DAG(
         task_id='download_departure',
         python_callable=download_daily_data,
         op_kwargs={
-            'target_date': '{{ execution_date.in_timezone(KST).strftime("%Y%m%d") }}',
+            'target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}',
             'data_type': "출발",
             'download_path': DOWNLOAD_PATH
         }
@@ -451,7 +451,7 @@ with DAG(
         task_id='download_arrival', 
         python_callable=download_daily_data,
         op_kwargs={
-            'target_date': '{{ execution_date.in_timezone(KST).strftime("%Y%m%d") }}',
+            'target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}',
             'data_type': "도착",
             'download_path': DOWNLOAD_PATH
         }
@@ -469,7 +469,7 @@ with DAG(
         job_name='team5-glue-flight_operation_japan_daily',
         region_name='ap-northeast-2',
         script_args={
-            '--target_date': '{{ execution_date.in_timezone(KST).strftime("%Y%m%d") }}',
+            '--target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}',
         },
         aws_conn_id='aws_default',
     )
@@ -479,7 +479,7 @@ with DAG(
         task_id='load_to_snowflake',
         python_callable=snowflake_load,
         op_kwargs={
-            'target_date': '{{ execution_date.in_timezone(KST).strftime("%Y%m%d") }}'
+            'target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}'
         }
     )
 
