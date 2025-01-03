@@ -463,7 +463,7 @@ with DAG(
             '--target_date': '{{ execution_date.in_timezone("Asia/Seoul").strftime("%Y%m%d") }}',
         },
         aws_conn_id='aws_default',
-        role_arn='arn:aws:iam::Team5:role/Team5-glue-role' 
+        role_arn='arn:aws:iam::862327261051:role/Team5-glue-role' 
     )
     
     # Snowflake 적재 태스크
