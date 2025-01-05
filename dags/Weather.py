@@ -272,10 +272,18 @@ def read_parquet_files_from_s3(bucket_name, prefix):
     keys = s3_hook.list_keys(bucket_name, prefix=prefix)
     logging.info(f"Found keys: {keys}")
 
-    # .parquet으로 끝나는 파일만 필터링
-    parquet_files = [key for key in keys if key.endswith('.parquet')]
-    # 'transform_data/'를 경로에서 제거
-    parquet_files = [key.replace('transform_data/', '') for key in parquet_files]
+    parquet_files = []
+    for key in keys:
+        if key.endswith('.parquet'):
+            try:
+                # S3 객체가 비어 있는지 확인
+                size = s3_hook.get_key(key, bucket_name).content_length
+                if size > 0:
+                    parquet_files.append(key)
+                else:
+                    logging.warning(f"Empty Parquet file found: {key}")
+            except Exception as e:
+                logging.error(f"Error checking file size for {key}: {e}")
 
     # 필터링된 .parquet 파일 목록 반환
     return parquet_files
