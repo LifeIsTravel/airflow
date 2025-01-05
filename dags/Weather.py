@@ -189,7 +189,6 @@ def bulk_copy_to_snowlake(parquet_files, table_name):
         snowflake_hook.run(create_query)
         logging.info("CREATE STAGE Complete")
 
-        files_list = "', '".join(parquet_files)  # 파일 목록을 '파일1', '파일2', ... 형태로 변환
         if table_name == 'PAST_WEATHER':
             copy_query = f"""
                 COPY INTO "TEAM5"."RAW_DATA"."{table_name}"
@@ -213,7 +212,7 @@ def bulk_copy_to_snowlake(parquet_files, table_name):
                         $1:AIRPORT_CODE::VARCHAR(10) AS AIRPORT_CODE
                     FROM '@"TEAM5"."RAW_DATA"."TEAM5_STAGE"'
                 )
-                FILES = ('{files_list}')
+                PATTERN = '.*\\.parquet$'
                 FILE_FORMAT = (
                     TYPE = PARQUET,
                     REPLACE_INVALID_CHARACTERS = TRUE,
@@ -249,7 +248,7 @@ def bulk_copy_to_snowlake(parquet_files, table_name):
                         $1:AIRPORT_CODE::VARCHAR(10) AS AIRPORT_CODE
                     FROM '@"TEAM5"."RAW_DATA"."TEAM5_STAGE"'
                 )
-                FILES = ('{files_list}')
+                PATTERN = '.*\\.parquet$'
                 FILE_FORMAT = (
                     TYPE = PARQUET,
                     REPLACE_INVALID_CHARACTERS = TRUE,
