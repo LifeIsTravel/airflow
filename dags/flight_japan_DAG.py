@@ -6,7 +6,7 @@ from datetime import datetime
 from airflow import DAG
 from airflow.utils.task_group import TaskGroup
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from utils.flight_etl import create_airport_task, transform, load
 
