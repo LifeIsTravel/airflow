@@ -225,7 +225,7 @@ def load_to_snowflake(**context):
     logical_date = context['logical_date']
     date_str = logical_date.strftime('%Y%m%d')  
     try:
-        snow_hook = SnowflakeHook(snowflake_conn_id='snowflake_default')
+        snow_hook = SnowflakeHook(snowflake_conn_id='snowflake_conn')
         
         # 타겟 테이블 생성
         create_table = """
