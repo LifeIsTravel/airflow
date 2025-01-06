@@ -44,19 +44,6 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
-
-def get_target_date(**context):
-    """실행 날짜로부터 대상 날짜 계산"""
-    # execution_date를 한국 시간대로 변환, -1 하지 않음. execution_date 자체가 하루 전 날짜
-    execution_date = context['execution_date'].in_timezone(KST)
-    target_date = execution_date.strftime('%Y%m%d')
-    # 하루 전 날짜를 반환
-    #target_date = execution_date - timedelta(days=1)
-    #logger.info(f"Execution date (KST): {execution_date}")
-    logger.info(f"Target date for data collection: {target_date}")
-    
-    return target_date
-
 # 앞에 Chrome이랑 Chrome Driver를 EC2에 설치해야함.
 def setup_chrome_driver():
     """EC2용 Chrome WebDriver 설정"""
