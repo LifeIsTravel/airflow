@@ -118,29 +118,37 @@ def process_places_data(raw_data, city_info):
     """Places API 응답 데이터를 정형화된 형태로 변환"""
     processed_places = []
         
-    for place in raw_data:
-        # 위도/경도를 조합하여 고유 ID 생성
-        lat = place['location']['latitude']
-        lon = place['location']['longitude']
-        place_id = f"{city_info['name']}_{lat:.6f}_{lon:.6f}".replace('.', '_')
+    # raw_data에서 places 배열 가져오기
+    places_data = raw_data.get('places', [])
+        
+    for place in places_data:
+        try:
+            # 위도/경도를 조합하여 고유 ID 생성
+            lat = place['location']['latitude']
+            lon = place['location']['longitude']
+            place_id = f"{city_info['name']}_{lat:.6f}_{lon:.6f}".replace('.', '_')
 
-        processed_place = {
-            'place_id': place_id,
-            'city_name': city_info['name'],
-            'city_name_ko': city_info['name_ko'],
-            'airport_code': get_city_airport_code(city_info['name']),
-            'place_name': place.get('displayName', {}).get('text', ''),
-            'address': place.get('formattedAddress', ''),
-            'latitude': place.get('location', {}).get('latitude', 0.0),
-            'longitude': place.get('location', {}).get('longitude', 0.0),
-            'rating': place.get('rating', 0.0),
-            'rating_count': place.get('userRatingCount', 0),
-            'photo_url': place.get('photos', [{}])[0].get('name', '') if place.get('photos') else '',
-            'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-        processed_places.append(processed_place)
-    
+            processed_place = {
+                'place_id': place_id,
+                'city_name': city_info['name'],
+                'city_name_ko': city_info['name_ko'],
+                'airport_code': get_city_airport_code(city_info['name']),
+                'place_name': place['displayName']['text'],
+                'address': place.get('formattedAddress', ''),
+                'latitude': lat,
+                'longitude': lon,
+                'rating': place.get('rating', 0.0),
+                'rating_count': place.get('userRatingCount', 0),
+                'photo_url': place.get('photos', [{}])[0].get('name', '') if place.get('photos') else '',
+                'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            processed_places.append(processed_place)
+            
+        except Exception as e:
+            logging.error(f"장소 데이터 처리 중 에러 발생: {str(e)}")
+            continue
     return processed_places
+
 
 def transform_and_save_places(**context):
     """수집된 장소 데이터를 변환하여 Parquet 형식으로 저장"""
@@ -157,7 +165,7 @@ def transform_and_save_places(**context):
         {"name": "Sapporo", "name_ko": "삿포로"}
     ]
     
-    all_places_data = []
+    all_places_data = pd.DataFrame()
     
     # 각 도시별 데이터 처리
     for city in cities:
