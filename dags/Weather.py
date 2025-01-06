@@ -174,92 +174,23 @@ def bulk_copy_to_snowlake(parquet_files, table_name):
     logging.info("Snowflake hook created")
 
     try:
-        # s3 데이터가 snowflake stage에 바로 업데이트 되지 않아서 stage를 내렸다가 다시 업로드
-        delete_query = f"""
-                DROP STAGE IF EXISTS TEAM5.raw_data.team5_stage;
-            """
-        snowflake_hook.run(delete_query)
-        logging.info("DROP STAGE Complete")
-
-        create_query = f"""
-                CREATE STAGE TEAM5.raw_data.team5_stage
+        for parquet_file in parquet_files:
+            copy_query = f"""
+                COPY INTO "TEAM5"."RAW_DATA"."{table_name}"
+                FROM 's3://team5-s3/{parquet_file}'
+                MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
                 STORAGE_INTEGRATION = TEAM5_S3_INTEGRATION
-                URL = 's3://team5-s3/transform_data/'
-            """
-        snowflake_hook.run(create_query)
-        logging.info("CREATE STAGE Complete")
-
-        if table_name == 'PAST_WEATHER':
-            copy_query = f"""
-                COPY INTO "TEAM5"."RAW_DATA"."{table_name}"
-                FROM (
-                    SELECT 
-                        $1:DATE::TIMESTAMP_TZ(9) AS DATE,
-                        $1:TIMESTAMP::TIMESTAMP_TZ(9) AS TIMESTAMP,
-                        $1:TEMPERATURE_2M::FLOAT AS TEMPERATURE_2M,
-                        $1:RELATIVE_HUMIDITY_2M::FLOAT AS RELATIVE_HUMIDITY_2M,
-                        $1:DEW_POINT_2M::FLOAT AS DEW_POINT_2M,
-                        $1:PRECIPITATION::FLOAT AS PRECIPITATION,
-                        $1:RAIN::FLOAT AS RAIN,
-                        $1:SNOWFALL::FLOAT AS SNOWFALL,
-                        $1:SNOW_DEPTH::FLOAT AS SNOW_DEPTH,
-                        $1:CLOUD_COVER::FLOAT AS CLOUD_COVER,
-                        $1:WIND_SPEED_10M::FLOAT AS WIND_SPEED_10M,
-                        $1:WIND_SPEED_100M::FLOAT AS WIND_SPEED_100M,
-                        $1:WIND_DIRECTION_10M::FLOAT AS WIND_DIRECTION_10M,
-                        $1:WIND_DIRECTION_100M::FLOAT AS WIND_DIRECTION_100M,
-                        $1:WIND_GUSTS_10M::FLOAT AS WIND_GUSTS_10M,
-                        $1:AIRPORT_CODE::VARCHAR(10) AS AIRPORT_CODE
-                    FROM '@"TEAM5"."RAW_DATA"."TEAM5_STAGE"'
-                )
-                PATTERN = '.*\\.parquet$'
                 FILE_FORMAT = (
-                    TYPE = PARQUET,
-                    REPLACE_INVALID_CHARACTERS = TRUE,
-                    BINARY_AS_TEXT = FALSE
-                )
-                ON_ERROR = ABORT_STATEMENT;
+                    TYPE=PARQUET,
+                    REPLACE_INVALID_CHARACTERS=TRUE,
+                    BINARY_AS_TEXT=FALSE
+                )            
+                ON_ERROR=ABORT_STATEMENT;
             """
-        else:
-            copy_query = f"""
-                COPY INTO "TEAM5"."RAW_DATA"."{table_name}"
-                FROM (
-                    SELECT 
-                        $1:DATE::TIMESTAMP_TZ(9) AS DATE,
-                        $1:TIMESTAMP::TIMESTAMP_TZ(9) AS TIMESTAMP,
-                        $1:TEMPERATURE_2M::FLOAT AS TEMPERATURE_2M,
-                        $1:RELATIVE_HUMIDITY_2M::FLOAT AS RELATIVE_HUMIDITY_2M,
-                        $1:DEW_POINT_2M::FLOAT AS DEW_POINT_2M,
-                        $1:PRECIPITATION::FLOAT AS PRECIPITATION,
-                        $1:RAIN::FLOAT AS RAIN,
-                        $1:SNOWFALL::FLOAT AS SNOWFALL,
-                        $1:SNOW_DEPTH::FLOAT AS SNOW_DEPTH,
-                        $1:CLOUD_COVER::FLOAT AS CLOUD_COVER,
-                        $1:VISIBILITY::FLOAT AS VISIBILITY,
-                        $1:WIND_SPEED_10M::FLOAT AS WIND_SPEED_10M,
-                        $1:WIND_SPEED_80M::FLOAT AS WIND_SPEED_80M,
-                        $1:WIND_SPEED_120M::FLOAT AS WIND_SPEED_120M,
-                        $1:WIND_SPEED_180M::FLOAT AS WIND_SPEED_180M,
-                        $1:WIND_DIRECTION_10M::FLOAT AS WIND_DIRECTION_10M,
-                        $1:WIND_DIRECTION_80M::FLOAT AS WIND_DIRECTION_80M,
-                        $1:WIND_DIRECTION_120M::FLOAT AS WIND_DIRECTION_120M,
-                        $1:WIND_DIRECTION_180M::FLOAT AS WIND_DIRECTION_180M,
-                        $1:WIND_GUSTS_10M::FLOAT AS WIND_GUSTS_10M,
-                        $1:AIRPORT_CODE::VARCHAR(10) AS AIRPORT_CODE
-                    FROM '@"TEAM5"."RAW_DATA"."TEAM5_STAGE"'
-                )
-                PATTERN = '.*\\.parquet$'
-                FILE_FORMAT = (
-                    TYPE = PARQUET,
-                    REPLACE_INVALID_CHARACTERS = TRUE,
-                    BINARY_AS_TEXT = FALSE
-                )
-                ON_ERROR = ABORT_STATEMENT;
-            """
-
-        result = snowflake_hook.run(copy_query)
+            # Snowflake에서 쿼리 실행
+            snowflake_hook.run(copy_query)
+            print(f"Load {parquet_file}")
         logging.info(f"COPY INTO Complete. Loaded {len(parquet_files)} files.")
-        return result
     except Exception as e:
         logging.error(f"Error in bulk copy to Snowflake: {str(e)}")
         raise
