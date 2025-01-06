@@ -214,7 +214,7 @@ def transform_hotels_data(**context):
         logging.warning("변환할 호텔 데이터가 없습니다.")
 
 with DAG(
-    'collect_and_transform_hotels_near_places',
+    'hotels_info_data_collection',
     default_args=default_args,
     description='주 1회 인기 장소 주변 호텔 정보 수집',
     schedule_interval='0 0 * * 1',  # 매주 월요일 00:00에 실행
