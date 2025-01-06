@@ -31,8 +31,8 @@ def get_top_places_coordinates() -> List[Dict]:
     files = s3_hook.list_keys(bucket_name=BUCKET_NAME, prefix=prefix)
     latest_file = max(files)  # 가장 최근 파일
     
-    # Parquet 파일 읽기
-    parquet_data = s3_hook.read_key(latest_file, BUCKET_NAME)
+    # Parquet 파일을 바이너리로 읽기
+    parquet_data = s3_hook.get_key(latest_file, BUCKET_NAME).get()['Body'].read()
     table = pq.read_table(pa.py_buffer(parquet_data))
     df = table.to_pandas()
     
