@@ -174,6 +174,54 @@ def bulk_copy_to_snowlake(parquet_files, table_name):
     logging.info("Snowflake hook created")
 
     try:
+        if table_name == 'FUTURE_WEATHER':
+            query = f"""create or replace TABLE TEAM5.RAW_DATA.FUTURE_WEATHER (
+                DATE TIMESTAMP_TZ(9),
+                TIMESTAMP TIMESTAMP_TZ(9),
+                TEMPERATURE_2M FLOAT,
+                RELATIVE_HUMIDITY_2M FLOAT,
+                DEW_POINT_2M FLOAT,
+                PRECIPITATION FLOAT,
+                RAIN FLOAT,
+                SNOWFALL FLOAT,
+                SNOW_DEPTH FLOAT,
+                CLOUD_COVER FLOAT,
+                VISIBILITY FLOAT,
+                WIND_SPEED_10M FLOAT,
+                WIND_SPEED_80M FLOAT,
+                WIND_SPEED_120M FLOAT,
+                WIND_SPEED_180M FLOAT,
+                WIND_DIRECTION_10M FLOAT,
+                WIND_DIRECTION_80M FLOAT,
+                WIND_DIRECTION_120M FLOAT,
+                WIND_DIRECTION_180M FLOAT,
+                WIND_GUSTS_10M FLOAT,
+                AIRPORT_CODE VARCHAR(10)
+            );
+        """
+        else:
+            query = f"""create or replace TABLE TEAM5.RAW_DATA.PAST_WEATHER (
+                    DATE TIMESTAMP_TZ(9),
+                    TIMESTAMP TIMESTAMP_TZ(9),
+                    TEMPERATURE_2M FLOAT,
+                    RELATIVE_HUMIDITY_2M FLOAT,
+                    DEW_POINT_2M FLOAT,
+                    PRECIPITATION FLOAT,
+                    RAIN FLOAT,
+                    SNOWFALL FLOAT,
+                    SNOW_DEPTH FLOAT,
+                    CLOUD_COVER FLOAT,
+                    WIND_SPEED_10M FLOAT,
+                    WIND_SPEED_100M FLOAT,
+                    WIND_DIRECTION_10M FLOAT,
+                    WIND_DIRECTION_100M FLOAT,
+                    WIND_GUSTS_10M FLOAT,
+                    AIRPORT_CODE VARCHAR(10)
+                );
+            """
+        snowflake_hook.run(query)
+        logging.info(f"Table {table_name} created")
+
         for parquet_file in parquet_files:
             copy_query = f"""
                 COPY INTO "TEAM5"."RAW_DATA"."{table_name}"
