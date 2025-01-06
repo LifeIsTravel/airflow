@@ -165,7 +165,7 @@ def transform_and_save_places(**context):
         {"name": "Sapporo", "name_ko": "삿포로"}
     ]
     
-    all_places_data = pd.DataFrame()
+    all_places_data = []
     
     # 각 도시별 데이터 처리
     for city in cities:
@@ -186,8 +186,13 @@ def transform_and_save_places(**context):
     
     if all_places_data:
         try:
-            # DataFrame 생성
+            # 모든 데이터를 수집한 후 DataFrame 생성
             df = pd.DataFrame(all_places_data)
+            df['rating'] = pd.to_numeric(df['rating'], errors='coerce').fillna(0)
+            df['rating_count'] = pd.to_numeric(df['rating_count'], errors='coerce').fillna(0)
+            
+            # 중복 제거
+            df = df.drop_duplicates(subset=['place_id'], keep='first')
             
             # PyArrow 테이블로 변환
             table = pa.Table.from_pandas(df)
@@ -202,6 +207,10 @@ def transform_and_save_places(**context):
                 key=transform_file_key,
                 bucket_name=BUCKET_NAME
             )
+            
+            logging.info(f"전체 처리된 장소 수: {len(df)}")
+            logging.info("\n도시별 장소 수:")
+            logging.info(df['city_name_ko'].value_counts())
             
             logging.info(f"Parquet 파일 저장 완료: {transform_file_key}")
             
