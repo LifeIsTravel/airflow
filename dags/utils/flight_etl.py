@@ -8,6 +8,8 @@ import pytz
 from airflow.decorators import task
 from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from .fetch_flight_data import fetch_flight_data
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
