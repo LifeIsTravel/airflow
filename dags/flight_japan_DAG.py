@@ -4,7 +4,7 @@ from datetime import datetime
 from airflow import DAG
 from airflow.utils.task_group import TaskGroup
 
-from utils.flight_etl import create_airport_task, transform, load
+from .utils.flight_etl import create_airport_task, transform, load
 
 # 로깅설정
 logging.basicConfig(
