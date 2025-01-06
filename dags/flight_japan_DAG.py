@@ -18,9 +18,9 @@ logging.basicConfig(
 # 목적지 공항 코드 정의
 airports = {
     "FUK": "후쿠오카",
-    # "KIX": "오사카/간사이",
-    # "NRT": "도쿄/나리타",
-    # "CTS": "삿포로",
+    "KIX": "오사카/간사이",
+    "NRT": "도쿄/나리타",
+    "CTS": "삿포로",
 }
 
 with DAG(
