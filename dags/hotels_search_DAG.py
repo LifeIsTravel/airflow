@@ -134,12 +134,7 @@ def transform_hotels_data(**context):
     
     # S3에서 당일 수집된 모든 호텔 데이터 파일 조회
     prefix = f"raw_data/hotels_search/{date_str}"
-    hotel_files = []
-    cities = s3_hook.list_directories(bucket_name=BUCKET_NAME, prefix=prefix)
-    
-    for city_prefix in cities:
-        city_files = s3_hook.list_keys(bucket_name=BUCKET_NAME, prefix=city_prefix)
-        hotel_files.extend([f for f in city_files if date_str in f and f.endswith('.json')])
+    hotel_files = s3_hook.list_keys(bucket_name=BUCKET_NAME, prefix=prefix)
     
     for file_key in hotel_files:
         try:
