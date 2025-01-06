@@ -21,7 +21,7 @@ with DAG(
         dag_id="path_test_DAG",
         description="경로 확인용 테스트 DAG",
         start_date=datetime(2023, 12, 1),
-        schedule_interval="0 * * * *",  # 매시간마다 실행
+        schedule_interval="0 * * * *",  # 매 시간마다 실행
         catchup=False,
 ) as dag:
     check_paths_task = PythonOperator(
