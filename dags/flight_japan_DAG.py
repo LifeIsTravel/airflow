@@ -8,7 +8,7 @@ from airflow.utils.task_group import TaskGroup
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from .utils.flight_etl import create_airport_task, transform, load
+from utils.flight_etl import create_airport_task, transform, load
 
 # 로깅설정
 logging.basicConfig(
