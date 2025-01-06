@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import pytz
 from airflow.decorators import task
 from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
-from utils.flight_fetch_data import fetch_flight_data
+from fetch_flight_data import fetch_flight_data
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
