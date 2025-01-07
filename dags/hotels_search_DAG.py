@@ -2,7 +2,10 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.models import Variable
+from airflow.exceptions import AirflowException
+
 from datetime import datetime, timedelta
+import traceback
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -126,87 +129,128 @@ def transform_hotels_data(**context):
     }
     """호텔 데이터 변환 및 거리 계산"""
     
+    logging.info("transform_hotels_data 시작")
+    
     s3_hook = S3Hook(aws_conn_id='aws_default')
     logical_date = context['logical_date']
     date_str = logical_date.strftime('%Y%m%d')
     
     transformed_hotels = []
+    processed_files = 0
+    failed_files = 0
     
     # S3에서 당일 수집된 모든 호텔 데이터 파일 조회
     prefix = f"raw_data/hotels_search/{date_str}"
     hotel_files = s3_hook.list_keys(bucket_name=BUCKET_NAME, prefix=prefix)
     
+    if not hotel_files:
+        raise AirflowException(f"No files found in {prefix}")
+    
     for file_key in hotel_files:
         try:
+            logging.info(f"파일 처리 시작: {file_key}")
+            
             # 파일명에서 도시와 장소 정보 추출
             path_parts = file_key.split('/')
+            if len(path_parts) < 2:
+                raise ValueError(f"Invalid file path structure: {file_key}")
+                
             city_name = path_parts[-2]
-            filename = path_parts[-1]  # tokyo_35_7147_139_7967_hotels_20250106.json
-            place_id = '_'.join(filename.split('_')[:4])  # tokyo_35_7147_139_7967
+            filename = path_parts[-1]
+            place_id = '_'.join(filename.split('_')[:4])
+            
+            if city_name not in city_mapping:
+                raise ValueError(f"Unknown city name: {city_name}")
             
             # 파일 읽기
             content = s3_hook.read_key(file_key, BUCKET_NAME)
-            hotel_data = json.loads(content)
+            try:
+                hotel_data = json.loads(content)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in file {file_key}: {str(e)}")
+            
+            if 'data' not in hotel_data or 'result' not in hotel_data['data']:
+                raise ValueError(f"Invalid data structure in file {file_key}")
             
             # 장소 정보 가져오기
-            place_info = next(p for p in get_top_places_coordinates() if p['place_id'] == place_id)
+            place_info = None
+            places_coordinates = get_top_places_coordinates()
+            try:
+                place_info = next(p for p in places_coordinates if p['place_id'] == place_id)
+            except StopIteration:
+                raise ValueError(f"Place ID not found: {place_id}")
             
             # 숙소 - 인기 장소 거리
             for hotel in hotel_data['data']['result']:
-                distance = calculate_distance(
-                    float(hotel['latitude']),
-                    float(hotel['longitude']),
-                    float(place_info['latitude']),
-                    float(place_info['longitude'])
-                )
-                
-                # 도시 이름으로 매핑 정보 가져오기
-                city_info = city_mapping[city_name]
-                
-                transformed_hotel = {
-                    'hotel_id': str(hotel['hotel_id']),
-                    'hotel_name': hotel['hotel_name'],
-                    'airport_code': city_info['airport_code'],
-                    'city_name': city_info['city_name'],
-                    'city_name_ko': city_info['city_name_ko'],
-                    'place_id': place_info['place_id'],
-                    'place_name': place_info['place_name'],
-                    'review_score': float(hotel.get('review_score', 0)),
-                    'review_score_word': hotel.get('review_score_word', ''),
-                    'review_nr': int(hotel.get('review_nr', 0)),
-                    'checkin_time': hotel.get('checkin', {}).get('from', ''),
-                    'checkout_time': hotel.get('checkout', {}).get('until', ''),
-                    'hotel_class': str(hotel.get('class', '')),
-                    'latitude': float(hotel['latitude']),
-                    'longitude': float(hotel['longitude']),
-                    'distance': distance
-                }
-                transformed_hotels.append(transformed_hotel)
-                
+                try:
+                    distance = calculate_distance(
+                        float(hotel['latitude']),
+                        float(hotel['longitude']),
+                        float(place_info['latitude']),
+                        float(place_info['longitude'])
+                    )
+                    
+                    city_info = city_mapping[city_name]
+                    
+                    transformed_hotel = {
+                        'hotel_id': str(hotel['hotel_id']),
+                        'hotel_name': hotel['hotel_name'],
+                        'airport_code': city_info['airport_code'],
+                        'city_name': city_info['city_name'],
+                        'city_name_ko': city_info['city_name_ko'],
+                        'place_id': place_info['place_id'],
+                        'place_name': place_info['place_name'],
+                        'review_score': float(hotel.get('review_score', 0)),
+                        'review_score_word': hotel.get('review_score_word', ''),
+                        'review_nr': int(hotel.get('review_nr', 0)),
+                        'checkin_time': hotel.get('checkin', {}).get('from', ''),
+                        'checkout_time': hotel.get('checkout', {}).get('until', ''),
+                        'hotel_class': str(hotel.get('class', '')),
+                        'latitude': float(hotel['latitude']),
+                        'longitude': float(hotel['longitude']),
+                        'distance': distance
+                    }
+                    transformed_hotels.append(transformed_hotel)
+                    
+                except (KeyError, ValueError) as e:
+                    logging.error(f"호텔 데이터 처리 중 에러 발생: {str(e)}")
+                    continue  # 개별 호텔 데이터 에러는 건너뛰기
+            
+            processed_files += 1
+            logging.info(f"파일 처리 완료: {file_key}")
+            
         except Exception as e:
+            failed_files += 1
             logging.error(f"{file_key} 처리 중 에러 발생: {str(e)}")
-            continue
+            logging.error(f"에러 상세정보: {traceback.format_exc()}")
     
-    if transformed_hotels:
-        # DataFrame 생성 및 Parquet 변환
-        df = pd.DataFrame(transformed_hotels)
-        table = pa.Table.from_pandas(df)
-        
-        # 메모리에서 Parquet 파일 생성
-        parquet_buffer = pa.BufferOutputStream()
-        pq.write_table(table, parquet_buffer)
-        
-        # S3에 저장
-        output_key = f"transform_data/hotels_search/hotels_{date_str}.parquet"
-        s3_hook.load_bytes(
-            parquet_buffer.getvalue().to_pybytes(),
-            key=output_key,
-            bucket_name=BUCKET_NAME
-        )
-        
-        logging.info(f"호텔 데이터 변환 완료: {len(transformed_hotels)}개 처리됨")
-    else:
-        logging.warning("변환할 호텔 데이터가 없습니다.")
+    # 모든 파일이 실패한 경우 에러 발생
+    if failed_files == len(hotel_files):
+        raise AirflowException(f"모든 파일 처리 실패 ({failed_files}/{len(hotel_files)})")
+    
+    # 변환된 데이터가 없는 경우 에러 발생
+    if not transformed_hotels:
+        raise AirflowException("변환된 호텔 데이터가 없습니다.")
+    
+    logging.info(f"처리된 파일: {processed_files}/{len(hotel_files)}, 실패한 파일: {failed_files}")
+    
+    # DataFrame 생성 및 Parquet 변환
+    df = pd.DataFrame(transformed_hotels)
+    table = pa.Table.from_pandas(df)
+    
+    # 메모리에서 Parquet 파일 생성
+    parquet_buffer = pa.BufferOutputStream()
+    pq.write_table(table, parquet_buffer)
+    
+    # S3에 저장
+    output_key = f"transform_data/hotels_search/hotels_{date_str}.parquet"
+    s3_hook.load_bytes(
+        parquet_buffer.getvalue().to_pybytes(),
+        key=output_key,
+        bucket_name=BUCKET_NAME
+    )
+    
+    logging.info(f"호텔 데이터 변환 완료: {len(transformed_hotels)}개 처리됨")
 
 with DAG(
     'hotels_info_data_collection',
