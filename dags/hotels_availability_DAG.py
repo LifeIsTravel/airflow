@@ -49,7 +49,7 @@ def collect_hotel_availability(**context):
     df = table.to_pandas()
     
     # API 호출 설정
-    api_key = Variable('booking_com_api_key')
+    api_key = Variable.get('booking_com_api_key')
     url = "https://booking-com15.p.rapidapi.com/api/v1/hotels/getAvailability"
     headers = {
         "x-rapidapi-key": api_key,
