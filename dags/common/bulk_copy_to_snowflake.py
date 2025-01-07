@@ -1,4 +1,5 @@
 import logging
+import os
 
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
@@ -29,8 +30,9 @@ def bulk_copy_to_snowflake(parquet_files, query_path):
 
     # 여러 파일 패턴을 지정하여 COPY
     files_list = "', '".join(parquet_files)  # 파일 목록을 '파일1', '파일2', ... 형태로 변환
+    open_path = os.path.join(os.path.dirname(__file__), query_path)
 
-    with open(query_path, 'r') as file:
+    with open(open_path, 'r') as file:
         query = file.read()
 
     formatted_query = query.format(files_list=files_list)

@@ -110,7 +110,7 @@ def load(execution_time, transform_data):
 
     # Snowflake 테이블에 데이터 BULK COPY (Upsert 방식)
     if parquet_file:
-        query_path = 'dags/sql/flight.sql'  # SQL 파일 경로
+        query_path = 'sql/flight.sql'  # SQL 파일 경로
         bulk_copy_to_snowflake(parquet_file, query_path)
         logging.info(f"Copied {len(parquet_file)} files into Snowflake.")
     else:
