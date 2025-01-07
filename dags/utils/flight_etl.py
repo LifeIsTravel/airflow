@@ -36,7 +36,7 @@ def create_airport_task(airport_code, airport_name):
             for date in dates:
                 # ICN -> Target 및 Target -> ICN 항공편 모두 추가
                 tasks.append(fetch_flight_data(date, "ICN", airport_code, execution_datetime))
-                # tasks.append(fetch_flight_data(date, airport_code, "ICN", execution_datetime))
+                tasks.append(fetch_flight_data(date, airport_code, "ICN", execution_datetime))
 
             # 모든 비동기 작업 실행
             await asyncio.gather(*tasks)
