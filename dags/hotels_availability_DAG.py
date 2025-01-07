@@ -70,10 +70,11 @@ def collect_hotel_availability(**context):
     processed_hotels = 0
     failed_hotels = 0
     
-    # 시간 정보 포함하여 저장
-    hour_str = logical_date.strftime('%H')
-    
-    for hotel_id in df['hotel_id'].unique():
+    # 호텔 가용성 체크시에는 unique한 hotel_id만 사용
+    unique_hotel_ids = df['hotel_id'].unique()
+    logging.info(f"Processing availability for {len(unique_hotel_ids)} unique hotels")
+    # 중복된 데이터 있음.
+    for hotel_id in unique_hotel_ids:
         try:
             # API 호출
             params = {**querystring, "hotel_id": hotel_id}
@@ -88,8 +89,9 @@ def collect_hotel_availability(**context):
                 'max_date': max_date
             }
             # 결과 저장 (시간별 디렉토리 구조)
-            output_key = f"raw_data/hotels_availability/{date_str}/{hour_str}/{hotel_id}_availability.json"
-            # 수정된 코드
+            output_key = f"raw_data/hotels_availability/{date_str}/{hotel_id}_availability.json"
+
+            # 날짜 정보 추가한 json으로 s3에 저장
             s3_hook.load_string(
                 json.dumps(response_data, ensure_ascii=False),
                 key=output_key,
@@ -120,12 +122,12 @@ def transform_hotel_availability(**context):
     s3_hook = S3Hook(aws_conn_id='aws_default')
     logical_date = context['logical_date']
     date_str = logical_date.strftime('%Y%m%d')
-    hour_str = logical_date.strftime('%H')
+    #hour_str = logical_date.strftime('%H')
     
     transformed_data = []
     
     # 해당 시간의 모든 호텔 데이터 조회
-    prefix = f"raw_data/hotels_availability/{date_str}/{hour_str}"
+    prefix = f"raw_data/hotels_availability/{date_str}"
     availability_files = s3_hook.list_keys(bucket_name=BUCKET_NAME, prefix=prefix)
     
     for file_key in availability_files:
@@ -148,6 +150,7 @@ def transform_hotel_availability(**context):
                     available_dates[date] = price
             
             # min_date부터 max_date까지의 모든 날짜에 대해 처리
+            # 대소비교를 위해 striptime으로 변환
             current_date = datetime.strptime(min_date, '%Y-%m-%d')
             end_date = datetime.strptime(max_date, '%Y-%m-%d')
             
@@ -157,8 +160,8 @@ def transform_hotel_availability(**context):
                 transformed_record = {
                     'hotel_id': hotel_id,
                     'checkin_date': date_str,
-                    'is_available': date_str in available_dates, # checkin 날짜가 데이터에 있으면 가능, 없으면 불가능능
-                    'price': available_dates.get(date_str, None),
+                    'is_available': date_str in available_dates, # checkin 날짜가 데이터에 있으면 가능, 없으면 불가능
+                    'price': available_dates.get(date_str, None), # 예약 불가능한 날에는 None으로 처리리
                     'currency': hotel_data['data']['currency'],
                     'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
@@ -183,7 +186,7 @@ def transform_hotel_availability(**context):
         table = pa.Table.from_pandas(df)
         
         # Parquet 파일 생성 및 저장
-        output_key = f"transform_data/hotels_availability/availability_{date_str}_{hour_str}.parquet"
+        output_key = f"transform_data/hotels_availability/availability_{date_str}.parquet"
         parquet_buffer = pa.BufferOutputStream()
         pq.write_table(table, parquet_buffer)
         
