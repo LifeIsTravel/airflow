@@ -210,7 +210,8 @@ def transform_hotels_data(**context):
                         'hotel_class': str(hotel.get('class', '')),
                         'latitude': float(hotel['latitude']),
                         'longitude': float(hotel['longitude']),
-                        'distance': distance
+                        'distance': distance,
+                        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     }
                     transformed_hotels.append(transformed_hotel)
                     
