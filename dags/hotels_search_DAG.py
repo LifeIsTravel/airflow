@@ -157,7 +157,8 @@ def transform_hotels_data(**context):
                 
             city_name = path_parts[-2]
             filename = path_parts[-1]
-            place_id = '_'.join(filename.split('_')[:4])
+            # 파일명에서 place_id 찾기기
+            place_id = '_'.join(filename.split('_')[:5])
             
             if city_name not in city_mapping:
                 raise ValueError(f"Unknown city name: {city_name}")
@@ -176,6 +177,7 @@ def transform_hotels_data(**context):
             place_info = None
             places_coordinates = get_top_places_coordinates()
             try:
+                # 인기 장소 각 도시별 10개씩 딕셔너리 화화
                 place_info = next(p for p in places_coordinates if p['place_id'] == place_id)
             except StopIteration:
                 raise ValueError(f"Place ID not found: {place_id}")
