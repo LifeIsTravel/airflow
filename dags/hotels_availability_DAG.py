@@ -42,10 +42,11 @@ def collect_hotel_availability(**context):
     # 최신 파일 선택 (파일명으로 정렬)
     latest_file = sorted(parquet_files)[-1]
     logging.info(f"Reading from file: {latest_file}")
-    
-    # Parquet 파일 읽기
-    parquet_content = s3_hook.read_key(latest_file, BUCKET_NAME)
-    df = pd.read_parquet(BytesIO(parquet_content))
+
+    # Parquet 파일을 바이너리로 읽기
+    parquet_data = s3_hook.get_key(latest_file, BUCKET_NAME).get()['Body'].read()
+    table = pq.read_table(pa.py_buffer(parquet_data))
+    df = table.to_pandas()
     
     # API 호출 설정
     api_key = Variable('booking_com_api_key')
