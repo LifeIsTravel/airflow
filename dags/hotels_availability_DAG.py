@@ -89,8 +89,9 @@ def collect_hotel_availability(**context):
             }
             # 결과 저장 (시간별 디렉토리 구조)
             output_key = f"raw_data/hotels_availability/{date_str}/{hour_str}/{hotel_id}_availability.json"
+            # 수정된 코드
             s3_hook.load_string(
-                json.dumps(response.json(), ensure_ascii=False),
+                json.dumps(response_data, ensure_ascii=False),
                 key=output_key,
                 bucket_name=BUCKET_NAME
             )
@@ -156,7 +157,7 @@ def transform_hotel_availability(**context):
                 transformed_record = {
                     'hotel_id': hotel_id,
                     'checkin_date': date_str,
-                    'is_available': date_str in available_dates,
+                    'is_available': date_str in available_dates, # checkin 날짜가 데이터에 있으면 가능, 없으면 불가능능
                     'price': available_dates.get(date_str, None),
                     'currency': hotel_data['data']['currency'],
                     'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -199,8 +200,8 @@ def transform_hotel_availability(**context):
 with DAG(
     'hotels_availability_collection',
     default_args=default_args,
-    description='매시간 호텔 가용성 정보 수집',
-    schedule_interval='@hourly',  # 매시간 실행
+    description='매시간 호텔 예약 가능 여부 및 가격 정보 수집',
+    schedule_interval= '0 4 * * *',  # 매시간 -> 하루 한번으로 변경, 한국시간 13시시
     catchup=False
 ) as dag:
     
