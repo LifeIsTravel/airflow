@@ -185,7 +185,7 @@ def transform_hotel_availability(**context):
         df = pd.DataFrame(transformed_data)
         
         # 데이터 타입 변환
-        df['checkin_date'] = pd.to_datetime(df['checkin_date']).dt.strftime('%Y-%m-%d')  # datetime으로 변환 후 다시 문자열로
+        #df['checkin_date'] = pd.to_datetime(df['checkin_date']).dt.strftime('%Y-%m-%d')  # datetime으로 변환 후 다시 문자열로
         df['updated_at'] = pd.to_datetime(df['updated_at'])
         df['price'] = df['price'].astype('float')
         
