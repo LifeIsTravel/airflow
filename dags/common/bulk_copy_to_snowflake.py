@@ -30,7 +30,10 @@ def bulk_copy_to_snowflake(parquet_files, query_path):
 
     # 여러 파일 패턴을 지정하여 COPY
     files_list = "', '".join(parquet_files)  # 파일 목록을 '파일1', '파일2', ... 형태로 변환
-    open_path = os.path.join(os.path.dirname(__file__), query_path)
+
+    # 현재 파일 기준으로 두 단계 상위 디렉토리로 이동
+    base_dir = os.path.dirname(os.path.dirname(__file__))  # 'dags' 디렉토리
+    open_path = os.path.join(base_dir, query_path)
 
     with open(open_path, 'r') as file:
         query = file.read()
