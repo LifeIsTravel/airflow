@@ -9,10 +9,15 @@ import logging
 import pyarrow as pa
 import pyarrow.parquet as pq
 from airflow import DAG
+from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
-from airflow.models import Variable
+from airflow.utils.task_group import TaskGroup
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.providers.amazon.aws.operators.rds import RdsBaseOperator
 from airflow.exceptions import AirflowException
+from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+
 
 BUCKET_NAME = 'team5-s3'
 
@@ -31,7 +36,7 @@ def collect_hotel_availability(**context):
     logical_date = context['logical_date']
     date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
     
-    # S3에서 최신 parquet 파일 찾기
+    # S3에서 호텔 리스트 최신 parquet 파일 찾기
     prefix = "transform_data/hotels_search"
     all_files = s3_hook.list_keys(bucket_name=BUCKET_NAME, prefix=prefix)
     parquet_files = [f for f in all_files if f.endswith('.parquet')]
@@ -48,7 +53,7 @@ def collect_hotel_availability(**context):
     table = pq.read_table(pa.py_buffer(parquet_data))
     df = table.to_pandas()
     
-    # API 호출 설정
+    # 엔드포인트 getAvailablility API 호출 설정
     api_key = Variable.get('booking_com_api_key')
     url = "https://booking-com15.p.rapidapi.com/api/v1/hotels/getAvailability"
     headers = {
@@ -200,11 +205,111 @@ def transform_hotel_availability(**context):
         logging.info(f"가용성 데이터 변환 완료: {len(transformed_data)}개 처리됨")
     else:
         raise AirflowException("변환할 데이터가 없습니다.")
+    
+def load_to_snowflake(**context):
+    """snowflake에 적재"""
+    
+    try:
+        logical_date = context['logical_date']
+        date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
+
+        snow_hook = SnowflakeHook(snowflake_conn_id='snowflake_conn')
+        # Table은 snowflake에서 생성해놨음.    
+        # COPY INTO 명령어로 데이터 로드
+        copy_data = f"""
+        COPY INTO TEAM5.RAW_DATA.HOTELS_AVAILABILITY
+        FROM 's3://team5-s3/transform_data/hotels_availability/availability_{date_str}.parquet'
+        MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+        STORAGE_INTEGRATION = TEAM5_S3_INTEGRATION
+        FILE_FORMAT = (
+            TYPE = PARQUET,
+            REPLACE_INVALID_CHARACTERS = TRUE,
+            BINARY_AS_TEXT = FALSE
+        )
+        ON_ERROR = ABORT_STATEMENT
+        FILES = ('availability_{date_str}.parquet') 
+        FORCE = FALSE;  
+        """ # 특정 파일만 로드, 이미 로드된 파일은 스킵
+
+        snowflake_result = snow_hook.run(copy_data)
+        
+        if snowflake_result:
+            logging.info(f"snowflake에 적재된 데이터 수: {len(snowflake_result)}")
+
+    except Exception as e:
+        logging.error(f"snoflake에 데이터 적재 실패: {str(e)}")
+        raise
+    
+def load_to_rds(**context):
+    """RDS에 최신 데이터만 업데이트"""
+    try:
+        logical_date = context['logical_date']
+        date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
+
+        s3_hook = S3Hook(aws_conn_id='aws_default')
+        parquet_data = s3_hook.get_key(
+            key=f"transform_data/hotels_availablility/availablity_{date_str}.parquet",
+            bucket_name=BUCKET_NAME
+        ).get()['Body'].read()
+
+        table = pq.read_table(pa.py_buffer(parquet_data))
+        df = table.to_pandas()
+
+        pg_hook = PostgresHook(postgres_conn_id='postgres_conn')
+        # 테이블이 없으면 생성
+        create_table_sql = """
+            CREATE TABLE IF NOT EXISTS hotels_availability(
+                hotel_id INTEGER NOT NULL,
+                checkin_date DATE NOT NULL,
+                is_available BOOLEAN NOT NULL,
+                price NUMERIC,
+                currency VARCHAR(3) NOT NULL,
+                updated_at TIMESTAMP NOT NULL,
+                PRIMARY KEY (hotel_id, checkin_date)
+            );
+        """
+
+        with pg_hook.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_table_sql)
+
+                # 기존 데이터 삭제
+                cur.execute("TRUNCATE TABLE hotels_availability;")
+                # 새로운 데이터 적재
+                df.to_sql(
+                    'hotels_availability',
+                    pg_hook.get_sqlalchemy_engine(),
+                    if_exists='append',
+                    index=False,
+                    method='multi',
+                    chunksize=1000
+                )
+        logging.info(f"RDS에 적재된 데이터 수: {len(df)}")
+    except Exception as e:
+        logging.error(f"RDS 데이터 적재 실패: {str(e)}")
+        raise
+
+def load_to_databases(**context):
+    """데이터베이스 적재를 위한 TaskGroup (Snowflake & RDS)"""
+    with TaskGroup(group_id = "load_to_db") as load_group:
+        snowflake_task = PythonOperator(
+            task_id = 'load_to_snowflake',
+            python_callable=load_to_snowflake
+        )
+
+        rds_task = PythonOperator(
+            task_id = 'load_to_rds',
+            python_callable = load_to_rds
+        )
+
+        [snowflake_task, rds_task]
+
+        return load_group
 # DAG 정의
 with DAG(
     'hotels_availability_collection',
     default_args=default_args,
-    description='일 1회회 호텔 예약 가능 여부 및 가격 정보 수집',
+    description='일 1회 호텔 예약 가능 여부 및 가격 정보 수집',
     schedule_interval= '0 4 * * *',  # 매시간 -> 하루 한번으로 변경, 한국시간 13시시
     catchup=False
 ) as dag:
@@ -219,4 +324,6 @@ with DAG(
         python_callable = transform_hotel_availability,
     )
 
-    extract_availability >> transform_availability
+    load_availability = load_to_databases()
+
+    extract_availability >> transform_availability >> load_availability
