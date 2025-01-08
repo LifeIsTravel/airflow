@@ -57,8 +57,9 @@ def collect_hotel_availability(**context):
     }
     
     # 날짜 설정 (오늘부터 30일)
-    min_date = logical_date.strftime('%Y-%m-%d')
-    max_date = (logical_date + timedelta(days=30)).strftime('%Y-%m-%d')
+    today = datetime.now()
+    min_date = today.strftime('%Y-%m-%d')
+    max_date = (today + timedelta(days=30)).strftime('%Y-%m-%d')
     
     # 기본 쿼리 파라미터
     querystring = {
