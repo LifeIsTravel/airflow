@@ -227,7 +227,6 @@ def load_to_snowflake(**context):
             BINARY_AS_TEXT = FALSE
         )
         ON_ERROR = ABORT_STATEMENT
-        FILES = ('availability_{date_str}.parquet') 
         FORCE = FALSE;  
         """ # 특정 파일만 로드, 이미 로드된 파일은 스킵
 
