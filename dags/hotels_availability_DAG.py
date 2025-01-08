@@ -247,7 +247,7 @@ def load_to_rds(**context):
 
         s3_hook = S3Hook(aws_conn_id='aws_default')
         parquet_data = s3_hook.get_key(
-            key=f"transform_data/hotels_availablility/availablity_{date_str}.parquet",
+            key=f"transform_data/hotels_availability/availability_{date_str}.parquet",
             bucket_name=BUCKET_NAME
         ).get()['Body'].read()
 
