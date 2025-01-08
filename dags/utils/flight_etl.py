@@ -16,6 +16,7 @@ sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from common.read_parquet_files_from_s3 import read_parquet_files_from_s3
 from common.bulk_copy_to_snowflake import bulk_copy_to_snowflake
+from common.bulf_copy_to_rds import bulk_copy_to_rds
 
 # 로깅설정
 logging.basicConfig(
@@ -110,8 +111,10 @@ def load(execution_time, transform_data):
 
     # Snowflake 테이블에 데이터 BULK COPY (Upsert 방식)
     if parquet_file:
-        query_path = 'sql/flight.sql'  # SQL 파일 경로
-        bulk_copy_to_snowflake(parquet_file, query_path)
+        snowflake_query_path = 'sql/load_flight_to_snowflake.sql'  # SQL 파일 경로
+        bulk_copy_to_snowflake(parquet_file, snowflake_query_path)
+        rds_query_path = 'sql/load_flight_to_rds.sql'
+        bulk_copy_to_rds(parquet_file, rds_query_path)
         logging.info(f"Copied {len(parquet_file)} files into Snowflake.")
     else:
         logging.info("No parquet files found to process.")
