@@ -14,7 +14,6 @@ from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.utils.task_group import TaskGroup
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from airflow.providers.amazon.aws.operators.rds import RdsBaseOperator
 from airflow.exceptions import AirflowException
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
@@ -169,7 +168,7 @@ def transform_hotel_availability(**context):
                     'is_available': current_date_str in available_dates, # checkin 날짜가 데이터에 있으면 가능, 없으면 불가능
                     'price': available_dates.get(current_date_str, None), # 예약 불가능한 날에는 None으로 처리리
                     'currency': hotel_data['data']['currency'],
-                    'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    'updated_at': datetime.now()
                 }
                 transformed_data.append(transformed_record)
                 
@@ -186,7 +185,7 @@ def transform_hotel_availability(**context):
         
         # 데이터 타입 변환
         #df['checkin_date'] = pd.to_datetime(df['checkin_date']).dt.strftime('%Y-%m-%d')  # datetime으로 변환 후 다시 문자열로
-        df['updated_at'] = pd.to_datetime(df['updated_at'])
+        #df['updated_at'] = pd.to_datetime(df['updated_at'])
         df['price'] = df['price'].astype('float')
         
         table = pa.Table.from_pandas(df)
