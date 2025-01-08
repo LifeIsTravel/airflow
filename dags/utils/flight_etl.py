@@ -31,7 +31,7 @@ def create_airport_task(airport_code, airport_name):
             execution_datetime = trans_to_kst(execution_time)
 
             # 날짜 계산 range(n) -> 앞으로 n일 계산
-            dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(30)]
+            dates = [(execution_datetime + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(2)]
 
             tasks = []
             for date in dates:
