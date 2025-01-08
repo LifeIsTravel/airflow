@@ -29,7 +29,7 @@ def collect_hotel_availability(**context):
     
     s3_hook = S3Hook(aws_conn_id='aws_default')
     logical_date = context['logical_date']
-    date_str = logical_date.strftime('%Y%m%d')
+    date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
     
     # S3에서 최신 parquet 파일 찾기
     prefix = "transform_data/hotels_search"
@@ -121,7 +121,7 @@ def transform_hotel_availability(**context):
     
     s3_hook = S3Hook(aws_conn_id='aws_default')
     logical_date = context['logical_date']
-    date_str = logical_date.strftime('%Y%m%d')
+    date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
     #hour_str = logical_date.strftime('%H')
     
     transformed_data = []
@@ -155,13 +155,13 @@ def transform_hotel_availability(**context):
             end_date = datetime.strptime(max_date, '%Y-%m-%d')
             
             while current_date <= end_date:
-                date_str = current_date.strftime('%Y-%m-%d')
+                current_date_str = current_date.strftime('%Y-%m-%d')
                 
                 transformed_record = {
                     'hotel_id': hotel_id,
-                    'checkin_date': date_str,
-                    'is_available': date_str in available_dates, # checkin 날짜가 데이터에 있으면 가능, 없으면 불가능
-                    'price': available_dates.get(date_str, None), # 예약 불가능한 날에는 None으로 처리리
+                    'checkin_date': current_date_str,
+                    'is_available': current_date_str in available_dates, # checkin 날짜가 데이터에 있으면 가능, 없으면 불가능
+                    'price': available_dates.get(current_date_str, None), # 예약 불가능한 날에는 None으로 처리리
                     'currency': hotel_data['data']['currency'],
                     'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
@@ -203,7 +203,7 @@ def transform_hotel_availability(**context):
 with DAG(
     'hotels_availability_collection',
     default_args=default_args,
-    description='매시간 호텔 예약 가능 여부 및 가격 정보 수집',
+    description='일 1회회 호텔 예약 가능 여부 및 가격 정보 수집',
     schedule_interval= '0 4 * * *',  # 매시간 -> 하루 한번으로 변경, 한국시간 13시시
     catchup=False
 ) as dag:
