@@ -16,7 +16,7 @@ sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 from common.read_parquet_files_from_s3 import read_parquet_files_from_s3
 from common.bulk_copy_to_snowflake import bulk_copy_to_snowflake
-from common.bulf_copy_to_rds import bulk_copy_to_rds
+from common.bulk_copy_to_rds import bulk_copy_to_rds
 
 # 로깅설정
 logging.basicConfig(
