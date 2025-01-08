@@ -14,6 +14,7 @@ from fetch_flight_data import fetch_flight_data
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
+from common.read_csv_files_from_s3 import read_csv_files_from_s3
 from common.read_parquet_files_from_s3 import read_parquet_files_from_s3
 from common.bulk_copy_to_snowflake import bulk_copy_to_snowflake
 from common.bulk_copy_to_rds import bulk_copy_to_rds
@@ -108,13 +109,16 @@ def load(execution_time, transform_data):
 
     s3_bucket = "team5-s3"  # S3 버킷 이름
     parquet_file = read_parquet_files_from_s3(s3_bucket, folder_path)
+    csv_files = read_csv_files_from_s3(s3_bucket, folder_path)
 
     # Snowflake 테이블에 데이터 BULK COPY (Upsert 방식)
     if parquet_file:
-        snowflake_query_path = 'sql/load_flight_to_snowflake.sql'  # SQL 파일 경로
-        bulk_copy_to_snowflake(parquet_file, snowflake_query_path)
         rds_query_path = 'sql/load_flight_to_rds.sql'
-        bulk_copy_to_rds(parquet_file, rds_query_path)
+        bulk_copy_to_rds(csv_files, rds_query_path)
+        logging.info(f"Copied {len(csv_files)} files into RDS.")
+
+        snowflake_query_path = 'sql/load_flight_to_snowflake.sql'
+        bulk_copy_to_snowflake(parquet_file, snowflake_query_path)
         logging.info(f"Copied {len(parquet_file)} files into Snowflake.")
     else:
         logging.info("No parquet files found to process.")
