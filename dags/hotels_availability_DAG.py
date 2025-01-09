@@ -4,7 +4,7 @@ import pandas as pd
 import time
 import traceback
 from datetime import datetime, timedelta
-from io import BytesIO
+from io import BytesIO, StringIO
 import logging
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -168,7 +168,7 @@ def transform_hotel_availability(**context):
                     'is_available': current_date_str in available_dates, # checkin 날짜가 데이터에 있으면 가능, 없으면 불가능
                     'price': available_dates.get(current_date_str, None), # 예약 불가능한 날에는 None으로 처리리
                     'currency': hotel_data['data']['currency'],
-                    'updated_at': datetime.now()
+                    'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
                 transformed_data.append(transformed_record)
                 
@@ -240,6 +240,7 @@ def load_to_snowflake(**context):
     
 def load_to_rds(**context):
     """RDS에 최신 데이터만 업데이트"""
+    csv_key = None
     try:
         logical_date = context['logical_date']
         date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
@@ -250,8 +251,20 @@ def load_to_rds(**context):
             bucket_name=BUCKET_NAME
         ).get()['Body'].read()
 
+        # Parquet을 CSV로 변환
         table = pq.read_table(pa.py_buffer(parquet_data))
-        df = table.to_pandas()
+        csv_buffer = StringIO()
+        table.to_pandas().to_csv(csv_buffer, index=False)
+        
+        # CSV 파일을 S3에 임시 저장
+        csv_key = f"temp/hotels_availability_{date_str}.csv"
+        s3_hook.load_string(
+            string_data=csv_buffer.getvalue(),
+            key=csv_key,
+            bucket_name=BUCKET_NAME,
+            replace=True
+        )
+        logging.info(f"임시 CSV 파일 생성 완료: {csv_key}")
 
         pg_hook = PostgresHook(postgres_conn_id='postgres_conn')
         # 테이블이 없으면 생성
@@ -262,7 +275,7 @@ def load_to_rds(**context):
                 is_available BOOLEAN NOT NULL,
                 price NUMERIC,
                 currency VARCHAR(3) NOT NULL,
-                updated_at TIMESTAMP NOT NULL,
+                updated_at VARCHAR(20) NOT NULL,
                 PRIMARY KEY (hotel_id, checkin_date)
             );
         """
@@ -270,22 +283,50 @@ def load_to_rds(**context):
         with pg_hook.get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(create_table_sql)
+                logging.info(f"테이블 생성 또는 확인 완료")
 
                 # 기존 데이터 삭제
+                cur.execute("SELECT COUNT(*) FROM hotels_availability")
+                before_count = cur.fetchone()[0]
+                logging.info(f"삭제 전 기존 데이터 수: {before_count}")
                 cur.execute("TRUNCATE TABLE hotels_availability;")
+                logging.info("기존 데이터 삭제 완료")
+                
                 # 새로운 데이터 적재
-                df.to_sql(
-                    'hotels_availability',
-                    pg_hook.get_sqlalchemy_engine(),
-                    if_exists='append',
-                    index=False,
-                    method='multi',
-                    chunksize=1000
-                )
-        logging.info(f"RDS에 적재된 데이터 수: {len(df)}")
+                logging.info(f"S3 경로 {BUCKET_NAME}/{csv_key}에서 데이터 적재 시작")
+                insert_query = f"""
+                    SELECT aws_s3.table_import_from_s3(
+                            'hotels_availability',
+                            '', --모든 컬럼
+                            '(format csv, header true)',
+                            aws_commons.create_s3_uri(
+                                '{BUCKET_NAME}',
+                                '{csv_key}',
+                                'ap-northeast-2'
+                            )
+                    );
+                """
+                cur.execute(insert_query)
+                # 적재 후 데이터 수 확인
+                cur.execute("SELECT COUNT(*) FROM hotels_availability")
+                after_count = cur.fetchone()[0]
+                logging.info(f"데이터 적재 완료: {after_count}행 적재됨")
+
     except Exception as e:
-        logging.error(f"RDS 데이터 적재 실패: {str(e)}")
+        logging.error(f"RDS 데이터 처리 중 오류 발생: {str(e)}")
         raise
+
+    finally:
+        # 성공/실패 여부와 관계없이 임시 파일 삭제 시도
+        if csv_key:
+            try:
+                s3_hook.delete_objects(
+                    bucket=BUCKET_NAME,
+                    keys=[csv_key]
+                )
+                logging.info(f"임시 CSV 파일 삭제 완료: {csv_key}")
+            except Exception as delete_error:
+                logging.error(f"임시 파일 삭제 실패: {str(delete_error)}")
 
 def load_to_databases(**context):
     """데이터베이스 적재를 위한 TaskGroup (Snowflake & RDS)"""
