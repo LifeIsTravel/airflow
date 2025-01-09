@@ -4,6 +4,6 @@ SELECT aws_s3.table_import_from_s3(
                '(format csv, HEADER)',
                aws_commons.create_s3_uri(
                        'team5-s3',
-                       '{s3_key}',
+                       '{csv_file}',
                        'ap-northeast-2'
                ));
