@@ -3,12 +3,15 @@ from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.models import Variable
 from airflow.exceptions import AirflowException
-
+from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from airflow.utils.task_group import TaskGroup
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 from datetime import datetime, timedelta
 import traceback
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+from io import StringIO
 import logging
 import requests
 import json
@@ -18,7 +21,7 @@ from typing import List, Dict
 default_args = {
     'owner': 'nykim',
     'depends_on_past': False,
-    'start_date': datetime(2025, 1, 1),
+    'start_date': datetime(2025, 1, 8),
     'retries': 3,
     'retry_delay': timedelta(minutes=5)
 }
@@ -60,7 +63,7 @@ def search_hotels_near_place(place: Dict, arrival_date: str, departure_date: str
         "longitude": place['longitude'],
         "arrival_date": arrival_date,
         "departure_date": departure_date,
-        "radius": 10,
+        "radius": 10, # 10km 근방 (최소값값)
         "page_count": "1",  # 첫 페이지만 가져옴, 20개
         "languagecode": 'ko',
         "currency_code": 'KRW'
@@ -81,9 +84,9 @@ def search_hotels_near_place(place: Dict, arrival_date: str, departure_date: str
     
 def collect_and_save_hotels(**context):
     """인기 장소 주변 호텔 데이터 수집 및 저장"""
-    # 실행 날짜 기준 다음 달 1일부터 2일까지 (예시 기간)
+    # 실행 날짜 기준 일주일 뒤 1박을 선택했을 때 나오는 호텔 리스트트
     logical_date = context['logical_date']
-    date_str = logical_date.strftime('%Y%m%d')
+    date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
     arrival_date = (logical_date + timedelta(days=7)).strftime('%Y-%m-%d')
     departure_date = (logical_date + timedelta(days=8)).strftime('%Y-%m-%d')
     
@@ -95,7 +98,7 @@ def collect_and_save_hotels(**context):
     
     for place in top_places:
         try:
-            # 호텔 데이터 수집
+            # 호텔 데이터 수집, api call
             hotels_data = search_hotels_near_place(place, arrival_date, departure_date)
             
             if hotels_data:
@@ -133,7 +136,7 @@ def transform_hotels_data(**context):
     
     s3_hook = S3Hook(aws_conn_id='aws_default')
     logical_date = context['logical_date']
-    date_str = logical_date.strftime('%Y%m%d')
+    date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
     
     transformed_hotels = []
     processed_files = 0
@@ -157,7 +160,7 @@ def transform_hotels_data(**context):
                 
             city_name = path_parts[-2]
             filename = path_parts[-1]
-            # 파일명에서 place_id 찾기기
+            # 파일명에서 place_id 찾기
             place_id = '_'.join(filename.split('_')[:5])
             
             if city_name not in city_mapping:
@@ -177,12 +180,12 @@ def transform_hotels_data(**context):
             place_info = None
             places_coordinates = get_top_places_coordinates()
             try:
-                # 인기 장소 각 도시별 10개씩 딕셔너리 화화
+                # 인기 장소 각 도시별 10개씩 딕셔너리 화
                 place_info = next(p for p in places_coordinates if p['place_id'] == place_id)
             except StopIteration:
                 raise ValueError(f"Place ID not found: {place_id}")
             
-            # 숙소 - 인기 장소 거리
+            # 숙소 - 인기 장소 간 거리 계산
             for hotel in hotel_data['data']['result']:
                 try:
                     distance = calculate_distance(
@@ -255,11 +258,161 @@ def transform_hotels_data(**context):
     
     logging.info(f"호텔 데이터 변환 완료: {len(transformed_hotels)}개 처리됨")
 
+def load_to_snowflake(**context):
+    """snowflake에 적재"""
+    
+    try:
+        logical_date = context['logical_date']
+        date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
+
+        snow_hook = SnowflakeHook(snowflake_conn_id='snowflake_conn')
+        # Table은 snowflake에서 생성해놨음.    
+        # COPY INTO 명령어로 데이터 로드
+        copy_data = f"""
+        COPY INTO TEAM5.RAW_DATA.HOTELS_SEARCH
+        FROM 's3://team5-s3/transform_data/hotels_search/hotels_{date_str}.parquet'
+        MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
+        STORAGE_INTEGRATION = TEAM5_S3_INTEGRATION
+        FILE_FORMAT = (
+            TYPE = PARQUET,
+            REPLACE_INVALID_CHARACTERS = TRUE,
+            BINARY_AS_TEXT = FALSE
+        )
+        ON_ERROR = ABORT_STATEMENT
+        FORCE = FALSE;  
+        """ # 특정 파일만 로드, 이미 로드된 파일은 스킵
+
+        snowflake_result = snow_hook.run(copy_data)
+        
+        if snowflake_result:
+            logging.info(f"snowflake에 적재된 데이터 수: {len(snowflake_result)}")
+
+    except Exception as e:
+        logging.error(f"snoflake에 데이터 적재 실패: {str(e)}")
+        raise
+    
+def load_to_rds(**context):
+    """RDS에 최신 데이터만 업데이트"""
+    csv_key = None
+    try:
+        logical_date = context['logical_date']
+        date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
+
+        s3_hook = S3Hook(aws_conn_id='aws_default')
+        parquet_data = s3_hook.get_key(
+            key=f"transform_data/hotels_search/hotels_{date_str}.parquet",
+            bucket_name=BUCKET_NAME
+        ).get()['Body'].read()
+
+        # Parquet을 CSV로 변환
+        table = pq.read_table(pa.py_buffer(parquet_data))
+        csv_buffer = StringIO()
+        table.to_pandas().to_csv(csv_buffer, index=False)
+        
+        # CSV 파일을 S3에 임시 저장
+        csv_key = f"temp/hotels_{date_str}.csv"
+        s3_hook.load_string(
+            string_data=csv_buffer.getvalue(),
+            key=csv_key,
+            bucket_name=BUCKET_NAME,
+            replace=True
+        )
+        logging.info(f"임시 CSV 파일 생성 완료: {csv_key}")
+
+        pg_hook = PostgresHook(postgres_conn_id='postgres_conn')
+        # 테이블이 없으면 생성
+        create_table_sql = """
+            CREATE TABLE IF NOT EXISTS hotels_search(
+                hotel_id VARCHAR(100),
+                hotel_name VARCHAR(200),
+                airport_code VARCHAR(3),
+                city_name VARCHAR(50),
+                city_name_ko VARCHAR(50),
+                place_id VARCHAR(100),
+                place_name VARCHAR(200),
+                reviews_score FLOAT,
+                review_score_word VARCHAR(50),
+                review_nr INTEGER,
+                checkin_time VARCHAR(50),
+                checkout_time VARCHAR(50),
+                hotel_class VARCHAR(10),
+                latitude FLOAT,
+                longitude FLOAT,
+                distance FLOAT,
+                updated_at TIMESTAMP
+            );
+        """
+
+        with pg_hook.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_table_sql)
+                logging.info(f"테이블 생성 또는 확인 완료")
+
+                # 기존 데이터 삭제
+                cur.execute("SELECT COUNT(*) FROM hotels_search")
+                before_count = cur.fetchone()[0]
+                logging.info(f"삭제 전 기존 데이터 수: {before_count}")
+                cur.execute("TRUNCATE TABLE hotels_search;")
+                logging.info("기존 데이터 삭제 완료")
+                
+                # 새로운 데이터 적재
+                logging.info(f"S3 경로 {BUCKET_NAME}/{csv_key}에서 데이터 적재 시작")
+                insert_query = f"""
+                    SELECT aws_s3.table_import_from_s3(
+                            'hotels_search',
+                            '', --모든 컬럼
+                            '(format csv, header true)',
+                            aws_commons.create_s3_uri(
+                                '{BUCKET_NAME}',
+                                '{csv_key}',
+                                'ap-northeast-2'
+                            )
+                    );
+                """
+                cur.execute(insert_query)
+                # 적재 후 데이터 수 확인
+                cur.execute("SELECT COUNT(*) FROM hotels_search")
+                after_count = cur.fetchone()[0]
+                logging.info(f"데이터 적재 완료: {after_count}행 적재됨")
+
+    except Exception as e:
+        logging.error(f"RDS 데이터 처리 중 오류 발생: {str(e)}")
+        raise
+
+    finally:
+        # 성공/실패 여부와 관계없이 임시 파일 삭제 시도
+        if csv_key:
+            try:
+                s3_hook.delete_objects(
+                    bucket=BUCKET_NAME,
+                    keys=[csv_key]
+                )
+                logging.info(f"임시 CSV 파일 삭제 완료: {csv_key}")
+            except Exception as delete_error:
+                logging.error(f"임시 파일 삭제 실패: {str(delete_error)}")
+
+def load_to_databases(**context):
+    """데이터베이스 적재를 위한 TaskGroup (Snowflake & RDS)"""
+    with TaskGroup(group_id = "load_to_db") as load_group:
+        snowflake_task = PythonOperator(
+            task_id = 'load_to_snowflake',
+            python_callable=load_to_snowflake
+        )
+
+        rds_task = PythonOperator(
+            task_id = 'load_to_rds',
+            python_callable = load_to_rds
+        )
+
+        [snowflake_task, rds_task]
+
+        return load_group
+    
 with DAG(
     'hotels_info_data_collection',
     default_args=default_args,
-    description='주 1회 인기 장소 주변 호텔 정보 수집',
-    schedule_interval='0 0 * * 1',  # 매주 월요일 00:00에 실행
+    description='인기 장소 주변 호텔 정보 수집',
+    schedule_interval='@once', 
     catchup=False
 ) as dag:
     
@@ -272,5 +425,7 @@ with DAG(
     python_callable=transform_hotels_data,
     )
 
-    extract_hotels >> transform_hotels
+    load_hotels = load_to_databases()
+
+    extract_hotels >> transform_hotels >> load_hotels
     
