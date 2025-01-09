@@ -3,9 +3,12 @@ from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.models import Variable
+from airflow.utils.task_group import TaskGroup
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 from datetime import datetime, timedelta
 import pandas as pd
 import pyarrow as pa
+from io import StringIO
 import pyarrow.parquet as pq
 import logging
 import requests
@@ -20,6 +23,8 @@ default_args = {
 }
 
 BUCKET_NAME = 'team5-s3'
+# 실행 날짜 당일
+
 
 def get_places_data(city: dict, api_key: str):
     """도시별 장소 데이터 수집"""
@@ -47,10 +52,8 @@ def get_places_data(city: dict, api_key: str):
 
 def collect_and_save_places(**context):
     """도시별 장소 데이터 수집 및 저장"""
-    # 실행 날짜 당일
     logical_date = context['logical_date']
-    date_str = logical_date.strftime('%Y%m%d')
-    
+    date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
     # S3 hook 초기화
     s3_hook = S3Hook(aws_conn_id='aws_default')
     
@@ -153,7 +156,7 @@ def process_places_data(raw_data, city_info):
 def transform_and_save_places(**context):
     """수집된 장소 데이터를 변환하여 Parquet 형식으로 저장"""
     logical_date = context['logical_date']
-    date_str = logical_date.strftime('%Y%m%d')
+    date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
     
     # S3 hook 초기화
     s3_hook = S3Hook(aws_conn_id='aws_default')    
@@ -289,27 +292,137 @@ def load_to_snowflake(**context):
         logging.error(f"Snowflake 데이터 로드 중 에러 발생: {str(e)}")
         raise
 
+def load_to_rds(**context):
+    """RDS에 최신 데이터만 업데이트"""
+    logical_date = context['logical_date']
+    date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
+    csv_key = None
+    try:
+        #logical_date = context['logical_date']
+        #date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
+
+        s3_hook = S3Hook(aws_conn_id='aws_default')
+        parquet_data = s3_hook.get_key(
+            key=f"transform_data/places/places_{date_str}.parquet",
+            bucket_name=BUCKET_NAME
+        ).get()['Body'].read()
+
+        # Parquet을 CSV로 변환
+        table = pq.read_table(pa.py_buffer(parquet_data))
+        csv_buffer = StringIO()
+        table.to_pandas().to_csv(csv_buffer, index=False)
+        
+        # CSV 파일을 S3에 임시 저장
+        csv_key = f"temp/places_{date_str}.csv"
+        s3_hook.load_string(
+            string_data=csv_buffer.getvalue(),
+            key=csv_key,
+            bucket_name=BUCKET_NAME,
+            replace=True
+        )
+        logging.info(f"임시 CSV 파일 생성 완료: {csv_key}")
+
+        pg_hook = PostgresHook(postgres_conn_id='postgres_conn')
+        # 테이블이 없으면 생성
+        create_table_sql = """
+            CREATE TABLE IF NOT EXISTS places(
+                place_id VARCHAR(100),
+                city_name VARCHAR(50),
+                city_name_ko VARCHAR(50),
+                airport_code VARCHAR(10),
+                place_name VARCHAR(200),
+                address VARCHAR(500),
+                latitude FLOAT,
+                longitude FLOAT,
+                rating FLOAT,
+                rating_count INTEGER,
+                photo_url VARCHAR(500),
+                updated_at TIMESTAMP_NTZ
+            );
+        """
+
+        with pg_hook.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_table_sql)
+                logging.info(f"테이블 생성 또는 확인 완료")
+
+                # 기존 데이터 삭제
+                cur.execute("SELECT COUNT(*) FROM places")
+                before_count = cur.fetchone()[0]
+                logging.info(f"삭제 전 기존 데이터 수: {before_count}")
+                cur.execute("TRUNCATE TABLE places;")
+                logging.info("기존 데이터 삭제 완료")
+                
+                # 새로운 데이터 적재
+                logging.info(f"S3 경로 {BUCKET_NAME}/{csv_key}에서 데이터 적재 시작")
+                insert_query = f"""
+                    SELECT aws_s3.table_import_from_s3(
+                            'places',
+                            '', --모든 컬럼
+                            '(format csv, header true)',
+                            aws_commons.create_s3_uri(
+                                '{BUCKET_NAME}',
+                                '{csv_key}',
+                                'ap-northeast-2'
+                            )
+                    );
+                """
+                cur.execute(insert_query)
+                # 적재 후 데이터 수 확인
+                cur.execute("SELECT COUNT(*) FROM places")
+                after_count = cur.fetchone()[0]
+                logging.info(f"데이터 적재 완료: {after_count}행 적재됨")
+
+    except Exception as e:
+        logging.error(f"RDS 데이터 처리 중 오류 발생: {str(e)}")
+        raise
+
+    finally:
+        # 성공/실패 여부와 관계없이 임시 파일 삭제 시도
+        if csv_key:
+            try:
+                s3_hook.delete_objects(
+                    bucket=BUCKET_NAME,
+                    keys=[csv_key]
+                )
+                logging.info(f"임시 CSV 파일 삭제 완료: {csv_key}")
+            except Exception as delete_error:
+                logging.error(f"임시 파일 삭제 실패: {str(delete_error)}")
+
+def load_to_databases(**context):
+    """데이터베이스 적재를 위한 TaskGroup (Snowflake & RDS)"""
+    with TaskGroup(group_id = "load_to_db") as load_group:
+        snowflake_task = PythonOperator(
+            task_id = 'load_to_snowflake',
+            python_callable=load_to_snowflake
+        )
+
+        rds_task = PythonOperator(
+            task_id = 'load_to_rds',
+            python_callable = load_to_rds
+        )
+
+        [snowflake_task, rds_task]
+
+        return load_group
 with DAG(
     'collect_and_transform_places',
     default_args=default_args,
-    description='월 1회 일본 주요 도시의 인기 장소 정보 수집 및 변환',
-    schedule_interval='0 0 1 * *',  # 매월 1일 00:00에 실행
+    description='일본 주요 도시의 인기 장소 정보 ETL',
+    schedule_interval='@once', 
     catchup=False
 ) as dag:
     
-    extract = PythonOperator(
+    extract_places = PythonOperator(
         task_id='collect_places_data',
         python_callable=collect_and_save_places,
     )
     
-    transform = PythonOperator(
+    transform_places = PythonOperator(
         task_id='transform_places_data',
         python_callable=transform_and_save_places,
     )
     
-    load = PythonOperator(
-        task_id='load_to_snowflake',
-        python_callable=load_to_snowflake,
-    )
+    load_places = load_to_databases()
     # Task 순서 정의
-    extract >> transform >> load
+    extract_places >> transform_places >> load_places
