@@ -7,7 +7,7 @@ CREATE TABLE flight
     departure_name         VARCHAR(100),
     arrival_display_code   VARCHAR(10),
     arrival_name           VARCHAR(100),
-    carrier_names          TEXT,               -- 배열 형태
+    carrier_names          TEXT,
     departure_time         TEXT,
     arrival_time           TEXT,
     agent_name             VARCHAR(100),
