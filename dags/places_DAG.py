@@ -226,7 +226,7 @@ def transform_and_save_places(**context):
 def load_to_snowflake(**context):
     """Parquet 파일을 Snowflake에 로드"""
     logical_date = context['logical_date']
-    date_str = logical_date.strftime('%Y%m%d')  
+    date_str = (logical_date + timedelta(days=1)).strftime('%Y%m%d')
     try:
         snow_hook = SnowflakeHook(snowflake_conn_id='snowflake_conn')
         
