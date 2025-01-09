@@ -337,7 +337,7 @@ def load_to_rds(**context):
                 rating FLOAT,
                 rating_count INTEGER,
                 photo_url VARCHAR(500),
-                updated_at TIMESTAMP_NTZ
+                updated_at TIMESTAMP
             );
         """
 
