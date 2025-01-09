@@ -17,7 +17,7 @@ import json
 default_args = {
     'owner': 'nykim',
     'depends_on_past': False,
-    'start_date': datetime(2025, 1, 1),
+    'start_date': datetime(2025, 1, 9),
     'retries': 3,
     'retry_delay': timedelta(minutes=5)
 }
@@ -91,7 +91,7 @@ def collect_and_save_places(**context):
             
             if response_data:
                 # S3에 JSON 응답 그대로 저장
-                file_key = f"raw_data/google_places/{city['name']}_places_{date_str}.json"
+                file_key = f"raw_data/places/{city['name']}_places_{date_str}.json"
                 
                 s3_hook.load_string(
                     json.dumps(response_data, ensure_ascii=False, indent=2),
@@ -174,7 +174,7 @@ def transform_and_save_places(**context):
     for city in cities:
         try:
             # Raw 데이터 파일 읽기
-            raw_file_key = f"raw_data/google_places/{city['name']}_places_{date_str}.json"
+            raw_file_key = f"raw_data/places/{city['name']}_places_{date_str}.json"
             raw_data = json.loads(s3_hook.read_key(raw_file_key, BUCKET_NAME))
             
             # 데이터 변환
@@ -210,7 +210,7 @@ def transform_and_save_places(**context):
                 key=transform_file_key,
                 bucket_name=BUCKET_NAME
             )
-            
+                            
             logging.info(f"전체 처리된 장소 수: {len(df)}")
             logging.info("\n도시별 장소 수:")
             logging.info(df['city_name_ko'].value_counts())
@@ -248,9 +248,27 @@ def load_to_snowflake(**context):
         );
         """
         
-        # COPY INTO 명령어로 데이터 로드
-        copy_data = f"""
-        COPY INTO TEAM5.RAW_DATA.PLACES 
+        # 임시 테이블 생성 및 데이터 로드
+        create_temp_table = """
+        CREATE OR REPLACE TEMPORARY TABLE TEAM5.RAW_DATA.TEMP_PLACES (
+            place_id VARCHAR(100),
+            city_name VARCHAR(50),
+            city_name_ko VARCHAR(50),
+            airport_code VARCHAR(10),
+            place_name VARCHAR(200),
+            address VARCHAR(500),
+            latitude FLOAT,
+            longitude FLOAT,
+            rating FLOAT,
+            rating_count INTEGER,
+            photo_url VARCHAR(500),
+            updated_at TIMESTAMP_NTZ
+        );
+        """
+        
+        # 새로운 데이터를 임시 테이블에 로드
+        copy_to_temp = f"""
+        COPY INTO TEAM5.RAW_DATA.TEMP_PLACES
         FROM 's3://team5-s3/transform_data/places/places_{date_str}.parquet'
         MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
         STORAGE_INTEGRATION = TEAM5_S3_INTEGRATION
@@ -262,31 +280,46 @@ def load_to_snowflake(**context):
         ON_ERROR = ABORT_STATEMENT;
         """
         
-        # 최신 데이터 조회를 위한 View 생성
-        create_view = """
-        CREATE OR REPLACE VIEW TEAM5.RAW_DATA.VW_LATEST_PLACES AS
-        WITH latest_updates AS (
-            SELECT 
-                place_id,
-                MAX(updated_at) as max_updated_at
-            FROM TEAM5.RAW_DATA.PLACES
-            GROUP BY place_id
-        )
-        SELECT p.*
-        FROM TEAM5.RAW_DATA.PLACES p
-        JOIN latest_updates l
-            ON p.place_id = l.place_id 
-            AND p.updated_at = l.max_updated_at;
+        # MERGE 문으로 데이터 업데이트
+        merge_data = """
+        MERGE INTO TEAM5.RAW_DATA.PLACES target
+        USING TEAM5.RAW_DATA.TEMP_PLACES source
+        ON target.place_id = source.place_id
+        WHEN MATCHED THEN
+            UPDATE SET 
+                city_name = source.city_name,
+                city_name_ko = source.city_name_ko,
+                airport_code = source.airport_code,
+                place_name = source.place_name,
+                address = source.address,
+                latitude = source.latitude,
+                longitude = source.longitude,
+                rating = source.rating,
+                rating_count = source.rating_count,
+                photo_url = source.photo_url,
+                updated_at = source.updated_at
+        WHEN NOT MATCHED THEN
+            INSERT (
+                place_id, city_name, city_name_ko, airport_code, 
+                place_name, address, latitude, longitude, 
+                rating, rating_count, photo_url, updated_at
+            )
+            VALUES (
+                source.place_id, source.city_name, source.city_name_ko, source.airport_code,
+                source.place_name, source.address, source.latitude, source.longitude,
+                source.rating, source.rating_count, source.photo_url, source.updated_at
+            );
         """
         
         # SQL 실행
         with snow_hook.get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(create_table)
-                cur.execute(copy_data)
-                cur.execute(create_view)
+                cur.execute(create_temp_table)
+                cur.execute(copy_to_temp)
+                cur.execute(merge_data)
         
-        logging.info("Snowflake 데이터 로드 및 View 생성 완료")
+        logging.info("Snowflake 데이터 업데이트 완료")
         
     except Exception as e:
         logging.error(f"Snowflake 데이터 로드 중 에러 발생: {str(e)}")
@@ -406,7 +439,7 @@ def load_to_databases(**context):
 
         return load_group
 with DAG(
-    'collect_and_transform_places',
+    'google_popular_places_collection',
     default_args=default_args,
     description='일본 주요 도시의 인기 장소 정보 ETL',
     schedule_interval='@once', 
