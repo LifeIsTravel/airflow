@@ -21,12 +21,12 @@ def extract_task(airport_code: str, airport_name: str, **context):
 
     async def airport_main():
         execution_datetime = trans_to_kst(execution_time)
-        dates = get_dates_in_range(execution_datetime, num_days=2)  # 날짜 계산: 앞으로의 num_days 계산
+        dates = get_dates_in_range(execution_datetime, num_days=30)  # 날짜 계산: 앞으로의 num_days 계산
 
         tasks = []  # ICN -> Target 및 Target -> ICN 항공편 모두 추가
         for date in dates:
             tasks.append(fetch_flight_data(date, "ICN", airport_code, execution_datetime))
-            # tasks.append(fetch_flight_data(date, airport_code, "ICN", execution_datetime))
+            tasks.append(fetch_flight_data(date, airport_code, "ICN", execution_datetime))
 
         await asyncio.gather(*tasks)  # 모든 비동기 작업 실행
 
