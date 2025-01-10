@@ -322,7 +322,8 @@ def load_to_rds(**context):
         pg_hook = PostgresHook(postgres_conn_id='postgres_conn')
         # 테이블이 없으면 생성
         create_table_sql = """
-            CREATE TABLE IF NOT EXISTS hotels_search(
+            DROP TABLE IF EXISTS hotels_search;
+            CREATE TABLE hotels_search(
                 hotel_id VARCHAR(100),
                 hotel_name VARCHAR(200),
                 airport_code VARCHAR(3),
@@ -330,7 +331,7 @@ def load_to_rds(**context):
                 city_name_ko VARCHAR(50),
                 place_id VARCHAR(100),
                 place_name VARCHAR(200),
-                reviews_score FLOAT,
+                review_score FLOAT,
                 review_score_word VARCHAR(50),
                 review_nr INTEGER,
                 checkin_time VARCHAR(50),
