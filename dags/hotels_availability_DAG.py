@@ -267,13 +267,13 @@ def load_to_rds(**context):
         # 테이블이 없으면 생성
         create_table_sql = """
             CREATE TABLE IF NOT EXISTS hotels_availability(
+                id SERIAL PRIMARY KEY,
                 hotel_id INTEGER NOT NULL,
                 checkin_date DATE NOT NULL,
                 is_available BOOLEAN NOT NULL,
                 price NUMERIC,
                 currency VARCHAR(3) NOT NULL,
                 updated_at VARCHAR(20) NOT NULL,
-                PRIMARY KEY (hotel_id, checkin_date)
             );
         """
 
