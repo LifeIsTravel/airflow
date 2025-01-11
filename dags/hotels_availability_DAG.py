@@ -273,7 +273,7 @@ def load_to_rds(**context):
                 is_available BOOLEAN NOT NULL,
                 price NUMERIC,
                 currency VARCHAR(3) NOT NULL,
-                updated_at VARCHAR(20) NOT NULL,
+                updated_at VARCHAR(20) NOT NULL
             );
         """
 
