@@ -59,7 +59,7 @@ def transform(extract_data: str, **context) -> str:
     try:
         start_glue_job(
             task_id='run_glue_job',  # Airflow task ID
-            job_name='team5-glue-flight',  # Glue 작업 이름
+            job_name='team5-glue-flight-naver',  # Glue 작업 이름
             arguments=arguments  # 전달할 인수
         )
         logger.info(f"AWS Glue Job 실행 시작.")

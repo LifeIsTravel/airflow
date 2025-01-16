@@ -23,7 +23,7 @@ def trans_to_kst(execution_time: str) -> datetime:
         start_date = datetime.strptime(execution_time, '%Y-%m-%dT%H:%M:%S.%f%z')
     else:
         start_date = datetime.strptime(execution_time, '%Y-%m-%dT%H:%M:%S%z')
-        start_date += timedelta(hours=1)
+        start_date += timedelta(days=1)
 
     kst = pytz.timezone('Asia/Seoul')
     start_date_kst = start_date.astimezone(kst)
@@ -44,7 +44,8 @@ def get_dates_in_range(start_date: datetime, num_days: int = 2) -> List[str]:
         List: A list of dates in the range.
     """
     logger.info(f"{num_days}일 간의 날짜 범위를 계산 중입니다.")  # 로그: 날짜 범위 계산 시작
-    dates = [(start_date + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(num_days)]
+    # dates = [(start_date + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(num_days)]  # apify
+    dates = [(start_date + timedelta(days=i)).strftime("%Y%m%d") for i in range(num_days)]  # naver
     logger.info(f"계산된 날짜 범위: {dates[0]} ~ {dates[-1]}")  # 로그: 계산된 날짜 범위 출력
     return dates
 

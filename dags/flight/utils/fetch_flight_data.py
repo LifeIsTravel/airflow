@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime
 
-from common.api_utils import get_flight_data
+from common.api_utils import get_flight_data_naver
 from common.aws_utils import upload_json_to_s3
 from common.logger import get_logger
 from flight.utils.date_calculator import extract_date_time
@@ -26,12 +26,12 @@ async def fetch_flight_data(date: str, origin: str, target: str, execution_datet
 
         path_date = extract_date_time(execution_datetime)
 
-        # Apify에서 비행기 데이터를 가져옴
-        results = await get_flight_data(date, origin, target)
+        # results = await get_flight_data_apify(date, origin, target) # Apify에서 비행기 데이터를 가져옴
+        results = await get_flight_data_naver(date, origin, target)  # Naver에서 비행기 데이터를 가져옴
         s3_bucket = "team5-s3"
 
         # 결과가 있으면 JSON으로 저장
-        if results:
+        if results["data"]["internationalList"]["resCnt"] > 0:
             logger.info(f"{origin} -> {target}의 {date} 데이터가 있으면 JSON 파일로 저장 중...")
             s3_key = f"raw_data/flights/{path_date}/{date}_{origin}_to_{target}.json"
             upload_json_to_s3(results, s3_bucket, s3_key)
