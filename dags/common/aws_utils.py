@@ -3,6 +3,7 @@ from typing import Optional, Dict, List
 
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
+from airflow.providers.amazon.aws.operators.lambda_function import LambdaInvokeFunctionOperator
 from common.logger import get_logger
 
 logger = get_logger(__name__)
@@ -95,7 +96,7 @@ def read_files_from_s3(bucket_name: str, prefix: str, file_type: str, aws_conn_i
 def start_glue_job(
         job_name: str,
         arguments: Optional[Dict] = None,
-        task_id: str = 'default_task_id',
+        task_id: str = 'default_glue_task_id',
         aws_conn_id: str = 'aws_default',
         region_name: str = 'ap-northeast-2'
 ):
@@ -122,4 +123,43 @@ def start_glue_job(
         logger.info(f"Glue 작업 '{job_name}'이 성공적으로 실행되었습니다.")
     except Exception as e:
         logger.error(f"Glue 작업 실행 실패: {str(e)}")
+        raise
+
+
+def start_lambda_function(
+        function_name: str,
+        payload: Optional[str] = None,
+        task_id: str = 'default_lambda_task_id',
+        invocation_type: str = 'Event',
+        aws_conn_id: str = 'aws_default'
+):
+    """
+    Invokes an AWS Lambda function using Airflow's LambdaInvokeFunctionOperator.
+
+    Args:
+        function_name (str): The name of the Lambda function to invoke.
+        payload (str, optional): The payload to send to the Lambda function.
+                               If None, an empty dictionary will be used.
+        task_id (str): The Airflow task ID for the Lambda invocation.
+        invocation_type (str): The Lambda invocation type ('Event' or 'RequestResponse').
+        aws_conn_id (str): The Airflow connection ID for AWS.
+    """
+    try:
+        if payload is None:
+            payload = '{}'
+
+        lambda_function = LambdaInvokeFunctionOperator(
+            task_id=task_id,
+            function_name=function_name,
+            invocation_type=invocation_type,
+            payload=payload,
+            aws_conn_id=aws_conn_id,
+        )
+
+        logger.info(f"Lambda 함수 '{function_name}'을 호출 중입니다...")
+        lambda_function.execute(context={})
+        logger.info(f"Lambda 함수 '{function_name}'이 성공적으로 호출되었습니다.")
+
+    except Exception as e:
+        logger.error(f"Lambda 함수 호출 실패: {str(e)}")
         raise

@@ -1,10 +1,12 @@
 import asyncio
+import random
+import time
 
 from common.aws_utils import start_glue_job, read_files_from_s3
 from common.logger import get_logger
 from flight.utils.bulk_copy import bulk_copy_to_snowflake, bulk_copy_to_rds
 from flight.utils.date_calculator import trans_to_kst, get_dates_in_range, extract_date_time
-from flight.utils.fetch_flight_data import fetch_flight_data
+from flight.utils.fetch_flight_data import fetch_flight_data, fetch_flight_date_lambda
 
 logger = get_logger(__name__)
 
@@ -19,19 +21,25 @@ def extract_task(airport_code: str, airport_name: str, **context):
         context: Airflow context containing execution information.
     """
 
-    async def airport_main():
-        execution_datetime = trans_to_kst(execution_time)
-        dates = get_dates_in_range(execution_datetime, num_days=30)  # 날짜 계산: 앞으로의 num_days 계산
-
+    async def airport_main(dates):
         tasks = []  # ICN -> Target 및 Target -> ICN 항공편 모두 추가
         for date in dates:
             tasks.append(fetch_flight_data(date, "ICN", airport_code, execution_datetime))
             tasks.append(fetch_flight_data(date, airport_code, "ICN", execution_datetime))
-
         await asyncio.gather(*tasks)  # 모든 비동기 작업 실행
 
+    def airport_main_lambda(dates):
+        for date in dates:
+            time.sleep(random.uniform(1, 2))
+            fetch_flight_date_lambda(date, "ICN", airport_code, execution_datetime)
+            time.sleep(random.uniform(1, 2))
+            fetch_flight_date_lambda(date, airport_code, "ICN", execution_datetime)
+
     execution_time = context['ts']
-    asyncio.run(airport_main())
+    execution_datetime = trans_to_kst(execution_time)
+    dates = get_dates_in_range(execution_datetime, num_days=30)  # 날짜 계산: 앞으로의 num_days 계산
+    # asyncio.run(airport_main(dates)) # 비동기 (Apify, Naver)
+    airport_main_lambda(dates) # 동기 (Lambda)
     logger.info(f"{airport_name} ({airport_code}) 처리 완료")
     return f"{airport_name} ({airport_code}) 처리 완료"
 
